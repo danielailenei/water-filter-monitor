@@ -1,0 +1,20 @@
+mqtt:
+  broker: localhost
+  port: 1883
+  topic: home/water/filter
+
+simulation:
+  clogging_rate: 0.0008        # constanta de degradare a filtrului
+  base_pressure_bar: 0.2       # cadere de presiune - filtru nou
+  base_flow_lmin: 15.0         # debit - filtru nou
+  base_turbidity_ntu: 0.5      # turbiditate - filtru nou
+  clog_threshold_bar: 1.5      # prag peste care filtrul e "infundat"
+  time_acceleration: 500       # de cate ori "curge" timpul mai repede in simulare
+  publish_interval_seconds: 5
+
+network:
+  # daca use_latency_file = true, senzorul citeste latenta simulata in ns-3
+  # din network_sim/latency_output.csv si o aplica ca delay inainte de publish,
+  # ca sa demonstreze impactul retelei 5G asupra livrarii datelor
+  use_latency_file: false
+  latency_file: ../network_sim/latency_output.csv

@@ -1,0 +1,17 @@
+apiVersion: 1
+
+datasources:
+  - name: InfluxDB
+    uid: influxdb-water-filter
+    type: influxdb
+    access: proxy
+    url: http://influxdb:8086
+    isDefault: true
+    jsonData:
+      version: Flux
+      organization: disertatie
+      defaultBucket: water_filter
+      tlsSkipVerify: true
+    secureJsonData:
+      token: dev-super-secret-token
+    editable: true
