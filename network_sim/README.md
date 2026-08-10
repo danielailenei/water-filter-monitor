@@ -102,6 +102,18 @@ Diferența nu e doar de medie (5x mai mare), ci mai ales de **variabilitate**
 practic zero la scenariul neîncărcat — exact fenomenul de jitter cauzat de
 o legătură partajată, suprasolicitată intermitent.
 
+![Comparație latență: retea rapida vs. congestionata](latency_comparison.png)
+
+Distribuția congestionată e vizibil **bimodală** — un grup în jur de ~41ms
+(pachete ajunse când legătura era liberă) și unul în jur de ~65-68ms
+(pachete prinse în mijlocul unei rafale de trafic de fond), cu foarte
+puține valori de tranziție între ele. Graficul e generat cu
+[`plot_latency_comparison.py`](plot_latency_comparison.py):
+
+```bash
+python3 network_sim/plot_latency_comparison.py
+```
+
 **4. Activează delay-ul de rețea în senzorul virtual** — în
 `sensor/config.yaml`:
 
