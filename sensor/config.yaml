@@ -14,7 +14,12 @@ simulation:
 
 network:
   # daca use_latency_file = true, senzorul citeste latenta simulata in ns-3
-  # din network_sim/latency_output.csv si o aplica ca delay inainte de publish,
-  # ca sa demonstreze impactul retelei 5G asupra livrarii datelor
-  use_latency_file: false
+  # (network_sim/) si o aplica ca delay inainte de fiecare publish, ca sa
+  # demonstreze impactul retelei asupra livrarii datelor.
+  #
+  # doua scenarii disponibile, generate din simularea ns-3
+  # (vezi network_sim/README.md):
+  #   - latency_output.csv        -> retea rapida, ~11-12ms  ("5G-like")
+  #   - latency_congestionat.csv  -> retea congestionata, ~41-42ms
+  use_latency_file: true
   latency_file: ../network_sim/latency_output.csv
