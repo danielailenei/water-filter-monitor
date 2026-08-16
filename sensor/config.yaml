@@ -9,7 +9,10 @@ simulation:
   base_flow_lmin: 15.0         # debit - filtru nou
   base_turbidity_ntu: 0.5      # turbiditate - filtru nou
   clog_threshold_bar: 1.5      # prag peste care filtrul e "infundat"
-  time_acceleration: 500       # de cate ori "curge" timpul mai repede in simulare
+  time_acceleration: 8000      # de cate ori "curge" timpul mai repede in simulare
+                                # (temporar marit, de la 500; la 8000, pragurile de
+                                # alerta 80/90/100% sosesc esalonat, la ~1 minut
+                                # unul de celalalt, in loc sa sara toate deodata)
   publish_interval_seconds: 5
 
 network:
