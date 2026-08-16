@@ -14,3 +14,11 @@ mosquitto/data/
 Thumbs.db
 .vscode/
 .idea/
+
+# Secrete reale (parole SMTP, topic ntfy etc.) - NU se urca niciodata pe git,
+# repo-ul e public. Vezi .env.secrets.example pentru sablon.
+.env.secrets
+
+# Fisier .env local (valori de dezvoltare) - nu trebuie versionat, vezi
+# .env.example pentru sablon
+.env

@@ -13,5 +13,5 @@ datasources:
       defaultBucket: water_filter
       tlsSkipVerify: true
     secureJsonData:
-      token: dev-super-secret-token
+      token: ${INFLUX_TOKEN}
     editable: true

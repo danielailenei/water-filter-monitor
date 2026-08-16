@@ -14,12 +14,15 @@ services:
     ports:
       - "8086:8086"
     environment:
+      # ${...} sunt citite din fisierul local .env (netrackuit in git - vezi
+      # .env.example pentru sablon). Fara el, Docker Compose foloseste
+      # valorile implicite de mai jos, valabile doar pentru dezvoltare locala.
       - DOCKER_INFLUXDB_INIT_MODE=setup
       - DOCKER_INFLUXDB_INIT_USERNAME=admin
-      - DOCKER_INFLUXDB_INIT_PASSWORD=admin12345
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUX_ADMIN_PASSWORD:-changeme123}
       - DOCKER_INFLUXDB_INIT_ORG=disertatie
       - DOCKER_INFLUXDB_INIT_BUCKET=water_filter
-      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=dev-super-secret-token
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN:-changeme}
     volumes:
       - influxdb-data:/var/lib/influxdb2
 
@@ -34,9 +37,13 @@ services:
       - MQTT_PORT=1883
       - MQTT_TOPIC=home/water/filter
       - INFLUX_URL=http://influxdb:8086
-      - INFLUX_TOKEN=dev-super-secret-token
+      - INFLUX_TOKEN=${INFLUX_TOKEN:-changeme}
       - INFLUX_ORG=disertatie
       - INFLUX_BUCKET=water_filter
+      - CLOG_THRESHOLD_BAR=1.5
+    env_file:
+      - path: .env.secrets
+        required: false
     ports:
       - "8000:8000"
 
@@ -49,7 +56,10 @@ services:
       - "3000:3000"
     environment:
       - GF_SECURITY_ADMIN_USER=admin
-      - GF_SECURITY_ADMIN_PASSWORD=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme123}
+      # necesar ca provisioning/datasources/influxdb.yaml sa poata substitui
+      # ${INFLUX_TOKEN} in loc sa il tina hardcodat
+      - INFLUX_TOKEN=${INFLUX_TOKEN:-changeme}
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - grafana-data:/var/lib/grafana
