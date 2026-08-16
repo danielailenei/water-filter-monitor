@@ -11,10 +11,12 @@ import threading
 import paho.mqtt.client as mqtt
 
 from db_writer import DBWriter
+from alerting import alert_manager
 
 MQTT_BROKER = os.getenv("MQTT_BROKER", "localhost")
 MQTT_PORT = int(os.getenv("MQTT_PORT", "1883"))
 MQTT_TOPIC = os.getenv("MQTT_TOPIC", "home/water/filter")
+CLOG_THRESHOLD_BAR = float(os.getenv("CLOG_THRESHOLD_BAR", "1.5"))
 
 
 class MqttSubscriber:
@@ -44,6 +46,13 @@ class MqttSubscriber:
             print(f"[mqtt] Citire scrisa in InfluxDB: {data}")
         except Exception as e:
             print(f"[mqtt] Eroare la scrierea in InfluxDB: {e}")
+            return
+
+        try:
+            pressure = float(data.get("pressure_drop_bar", 0))
+            alert_manager.check_and_notify(pressure, CLOG_THRESHOLD_BAR)
+        except Exception as e:
+            print(f"[mqtt] Eroare la verificarea alertelor: {e}")
 
     def start(self):
         self.client.connect(MQTT_BROKER, MQTT_PORT, 60)
