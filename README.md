@@ -2,9 +2,9 @@
 
 # 💧 Water Filter Monitor
 
-**Sistem IoT simulat pentru monitorizarea în timp real a stării unui filtru de apă și predicția momentului de înfundare.**
+**Simulated IoT system for real-time water filter health monitoring and clogging-time prediction.**
 
-Proiect de disertație — senzor virtual, comunicație MQTT, stocare time-series, predicție ML, dashboard live.
+Dissertation project — virtual sensor, MQTT messaging, time-series storage, ML-based prediction, live dashboard, dual-channel alerting.
 
 ![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
@@ -18,54 +18,58 @@ Proiect de disertație — senzor virtual, comunicație MQTT, stocare time-serie
 
 ---
 
-## 📖 Cuprins
+## 📖 Contents
 
-- [Ce face aplicația](#-ce-face-aplicația)
-- [Arhitectură](#-arhitectură)
-- [Stack tehnologic](#-stack-tehnologic)
-- [Pornire rapidă](#-pornire-rapidă)
-- [API-ul backend](#-api-ul-backend)
-- [Structura proiectului](#-structura-proiectului)
-- [Cum funcționează predicția](#-cum-funcționează-predicția)
-- [Documentație completă](#-documentație-completă)
-
----
-
-## 🎯 Ce face aplicația
-
-Simulează un senzor IoT montat pe un filtru de apă, care măsoară în timp
-real **presiunea diferențială**, **debitul** și **turbiditatea** apei. Pe
-măsură ce filtrul se colmatează, presiunea crește exponențial și debitul
-scade — exact ca la un filtru real. Sistemul:
-
-- 📡 colectează datele prin **MQTT**, protocolul standard în IoT;
-- 🗄️ le stochează istoric într-o bază de date **time-series** (InfluxDB);
-- 📊 le afișează live pe un **dashboard Grafana**, provizionat automat;
-- 🤖 **prezice** — printr-un model de regresie — peste câte zile filtrul se
-  va înfunda complet;
-- 🌐 poate simula impactul unei rețele reale (5G) asupra timpului de
-  livrare a datelor, folosind rezultate exportate dintr-o simulare **ns-3**.
+- [What it does](#-what-it-does)
+- [Architecture](#-architecture)
+- [Tech stack](#-tech-stack)
+- [Quick start](#-quick-start)
+- [Backend API](#-backend-api)
+- [Project structure](#-project-structure)
+- [How the prediction works](#-how-the-prediction-works)
+- [Full documentation](#-full-documentation)
 
 ---
 
-## 🏗️ Arhitectură
+## 🎯 What it does
+
+Simulates an IoT sensor mounted on a water filter, measuring **differential
+pressure**, **flow rate**, and **turbidity** in real time. As the filter
+clogs, pressure rises exponentially and flow drops — just like a real
+filter. The system:
+
+- 📡 collects data over **MQTT**, the standard IoT messaging protocol;
+- 🗄️ stores the full history in a **time-series database** (InfluxDB);
+- 📊 displays it live on an auto-provisioned **Grafana dashboard**;
+- 🤖 **predicts**, via a regression model, how many days remain before the
+  filter fully clogs;
+- 🔔 sends **email + push notifications** (ntfy.sh) at 80%, 90%, and 100% of
+  clogging capacity, with automatic retry on transient network failures;
+- 🌐 can simulate the impact of a real network (5G) on data delivery
+  latency, using results exported from an **ns-3** simulation.
+
+---
+
+## 🏗️ Architecture
 
 ```mermaid
 flowchart LR
-    S["🌡️ Senzor virtual<br/>Python, rulează local"]
-    M["📡 Mosquitto<br/>broker MQTT · :1883"]
-    B["⚙️ Backend FastAPI<br/>:8000"]
+    S["🌡️ Virtual sensor<br/>Python, runs locally"]
+    M["📡 Mosquitto<br/>MQTT broker · :1883"]
+    B["⚙️ FastAPI backend<br/>:8000"]
     I[("🗄️ InfluxDB<br/>:8086")]
     G["📊 Grafana<br/>:3000"]
-    C["💻 Client REST<br/>browser / curl"]
-    NS["🌐 ns-3 / Simu5G<br/>WSL2 · opțional"]
+    C["💻 REST client<br/>browser / curl"]
+    NS["🌐 ns-3 / Simu5G<br/>WSL2 · optional"]
+    A["🔔 Alerting<br/>email + push (ntfy.sh)"]
 
     S -- "publish JSON" --> M
     M -- "subscribe" --> B
-    B -- "scrie puncte" --> I
-    I -- "interoghează (Flux)" --> G
+    B -- "writes points" --> I
+    I -- "queries (Flux)" --> G
     B -- "/latest /history /predict" --> C
-    NS -. "latency_output.csv<br/>(delay simulat)" .-> S
+    B -- "threshold crossed" --> A
+    NS -. "latency_output.csv<br/>(simulated delay)" .-> S
 
     style S fill:#2b2b2b,stroke:#7dd3fc,color:#fff
     style M fill:#2b2b2b,stroke:#c084fc,color:#fff
@@ -74,111 +78,125 @@ flowchart LR
     style G fill:#2b2b2b,stroke:#fb923c,color:#fff
     style C fill:#2b2b2b,stroke:#f472b6,color:#fff
     style NS fill:#2b2b2b,stroke:#a3a3a3,color:#fff
+    style A fill:#2b2b2b,stroke:#facc15,color:#fff
 ```
 
-4 din cele 5 componente (Mosquitto, InfluxDB, backend, Grafana) rulează în
-containere Docker, pornite cu o singură comandă. Senzorul virtual rulează
-nativ cu Python, pentru iterație rapidă în timpul dezvoltării.
+4 of the 5 core components (Mosquitto, InfluxDB, backend, Grafana) run in
+Docker containers, started with a single command. The virtual sensor runs
+natively with Python, for fast iteration during development.
 
 ---
 
-## 🧩 Stack tehnologic
+## 🧩 Tech stack
 
-| Componentă | Tehnologie | Rol |
+| Component | Technology | Role |
 |---|---|---|
-| Senzor virtual | Python 3.12, `paho-mqtt` | Simulează degradarea filtrului, publică pe MQTT |
-| Broker mesagerie | Eclipse Mosquitto 2 | Transport MQTT senzor → backend |
-| Backend | FastAPI, `influxdb-client`, `scikit-learn` | API REST, scriere date, predicție ML |
-| Bază de date | InfluxDB 2.7 | Stocare time-series a citirilor |
-| Vizualizare | Grafana | Dashboard live, provizionat automat |
-| Orchestrare | Docker Compose | Pornire/oprire infrastructură cu o comandă |
-| Simulare rețea *(opțional)* | ns-3 / Simu5G, WSL2 | Latențe realiste 5G aplicate ca delay |
+| Virtual sensor | Python 3.12, `paho-mqtt` | Simulates filter degradation, publishes to MQTT |
+| Message broker | Eclipse Mosquitto 2 | MQTT transport, sensor → backend |
+| Backend | FastAPI, `influxdb-client`, `scikit-learn` | REST API, data ingestion, ML prediction |
+| Database | InfluxDB 2.7 | Time-series storage of readings |
+| Visualization | Grafana | Live dashboard, auto-provisioned |
+| Alerting | `smtplib` (SMTP) + ntfy.sh | Email + phone push at 80/90/100% clogging |
+| Orchestration | Docker Compose | Start/stop the whole stack with one command |
+| Network simulation *(optional)* | ns-3 / Simu5G, WSL2 | Realistic 5G latency applied as delay |
 
 ---
 
-## 🚀 Pornire rapidă
+## 🚀 Quick start
 
 ```bash
-# 1. Pornește infrastructura (Mosquitto, InfluxDB, backend, Grafana)
+# 1. Copy the env template and fill in real values (never commit .env)
+cp .env.example .env
+
+# 2. Start the infrastructure (Mosquitto, InfluxDB, backend, Grafana)
 docker compose up --build
 ```
 
-| Serviciu | URL | Autentificare |
+| Service | URL | Auth |
 |---|---|---|
-| 📊 Grafana | http://localhost:3000 | `admin` / `admin` |
-| 🗄️ InfluxDB UI | http://localhost:8086 | `admin` / `admin12345` |
+| 📊 Grafana | http://localhost:3000 | `admin` / value from `.env` |
+| 🗄️ InfluxDB UI | http://localhost:8086 | `admin` / value from `.env` |
 | ⚙️ Backend API | http://localhost:8000 | — |
 
 ```bash
-# 2. Pornește senzorul virtual (terminal separat, direct cu Python)
+# 3. Start the virtual sensor (separate terminal, plain Python)
 cd sensor
 pip install -r requirements.txt
 python virtual_sensor.py
 ```
 
 ```bash
-# 3. Verifică
+# 4. Verify
 curl.exe http://localhost:8000/latest
 curl.exe http://localhost:8000/predict
 ```
 
-Deschide **Grafana** → dashboard-ul *"Water Filter Monitor"* apare deja
-provizionat, cu grafice care se actualizează la fiecare 5 secunde.
+Open **Grafana** → the *"Water Filter Monitor"* dashboard is already
+provisioned, with charts refreshing every 5 seconds.
 
-> 🧭 Tutorial complet, pas cu pas, pentru cineva care pornește de la zero
-> (inclusiv instalarea Docker/WSL2/Python și depanare) în
-> [`docs/arhitectura.md`](docs/arhitectura.md#6-tutorial-de-instalare-și-utilizare-pas-cu-pas).
+> 🔔 To enable email/push alerts, copy `.env.secrets.example` to
+> `.env.secrets` and fill in your SMTP credentials and ntfy.sh topic (see
+> comments in the file for setup instructions).
+
+> 🧭 Full step-by-step tutorial for someone starting from scratch
+> (including Docker/WSL2/Python install and troubleshooting) in
+> [`docs/arhitectura.md`](docs/arhitectura.md#6-tutorial-de-instalare-și-utilizare-pas-cu-pas)
+> *(Romanian — original dissertation documentation)*.
 
 ---
 
-## 📡 API-ul backend
+## 📡 Backend API
 
-| Endpoint | Descriere |
+| Endpoint | Description |
 |---|---|
-| `GET /health` | Verificare rapidă că serviciul e sus |
-| `GET /latest` | Ultima citire primită prin MQTT |
-| `GET /history?hours=24` | Istoricul citirilor din InfluxDB |
-| `GET /predict?hours=24` | Predicție: zile rămase până la înfundare |
+| `GET /health` | Quick liveness check |
+| `GET /latest` | Latest reading received over MQTT |
+| `GET /history?hours=24` | Reading history from InfluxDB |
+| `GET /predict?hours=24` | Prediction: days remaining until clogging |
 
 ---
 
-## 📁 Structura proiectului
+## 📁 Project structure
 
 ```
 water-filter-monitor/
 ├── docker-compose.yml
-├── sensor/                 # 🌡️ senzor virtual (Python, MQTT publisher)
+├── sensor/                    # 🌡️ virtual sensor (Python, MQTT publisher)
 │   ├── virtual_sensor.py
-│   ├── filter_model.py     # modelul matematic de degradare
+│   ├── filter_model.py        # mathematical degradation model
 │   └── config.yaml
-├── backend/                 # ⚙️ FastAPI: subscriber MQTT + InfluxDB + predicție ML
+├── backend/                   # ⚙️ FastAPI: MQTT subscriber + InfluxDB + ML prediction + alerting
 │   ├── main.py
 │   ├── mqtt_subscriber.py
 │   ├── db_writer.py
-│   └── ml_model.py
-├── network_sim/              # 🌐 rezultate latență din ns-3 (rulat separat, WSL2)
-├── grafana/provisioning/      # 📊 datasource + dashboard provizionate automat
-└── docs/arhitectura.md         # 📖 documentație completă + tutorial
+│   ├── ml_model.py
+│   └── alerting.py            # 🔔 email + push notifications
+├── esp32_firmware/            # 🔌 optional: real ESP32 sensor firmware
+├── network_sim/                # 🌐 latency results from ns-3 (run separately, WSL2)
+├── grafana/provisioning/       # 📊 auto-provisioned datasource + dashboard
+└── docs/arhitectura.md          # 📖 full documentation + tutorial (Romanian)
 ```
 
 ---
 
-## 🤖 Cum funcționează predicția
+## 🤖 How the prediction works
 
-Presiunea diferențială a unui filtru crește **exponențial** pe măsură ce se
-colmatează. Logaritmul acestei presiuni crește deci **liniar** în timp —
-backend-ul potrivește o regresie liniară (`scikit-learn`) pe istoricul
-recent și extrapolează matematic momentul în care presiunea va atinge
-pragul de înfundare, raportând și `R²` (calitatea potrivirii) pentru
-transparență.
+A filter's differential pressure rises **exponentially** as it clogs, so
+its logarithm rises **linearly** over time — the backend fits a linear
+regression (`scikit-learn`) on recent history and extrapolates the point
+where pressure will reach the clogging threshold, also reporting `R²`
+(fit quality) for transparency.
 
-Detalii complete, cu formule, în [`docs/arhitectura.md`](docs/arhitectura.md#33-backend-ul--fastapi).
+Full details, with formulas, in
+[`docs/arhitectura.md`](docs/arhitectura.md#33-backend-ul--fastapi)
+*(Romanian)*.
 
 ---
 
-## 📖 Documentație completă
+## 📖 Full documentation
 
-[`docs/arhitectura.md`](docs/arhitectura.md) conține: explicarea fiecărei
-componente, diagrama fluxului de date, legăturile dintre servicii,
-tutorialul complet de instalare/utilizare, o secțiune de depanare pentru
-probleme frecvente, și argumentarea alegerilor tehnice.
+[`docs/arhitectura.md`](docs/arhitectura.md) *(Romanian, part of the
+original dissertation)* covers: a walkthrough of every component, the data
+flow diagram, service-to-service links, the full install/usage tutorial, a
+troubleshooting section for common issues, and the reasoning behind the
+technical choices. An English translation is on the roadmap.
