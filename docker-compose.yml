@@ -1,0 +1,68 @@
+services:
+  mosquitto:
+    image: eclipse-mosquitto:2
+    container_name: mosquitto
+    ports:
+      - "1883:1883"
+    volumes:
+      - ./mosquitto/config:/mosquitto/config
+      - ./mosquitto/data:/mosquitto/data
+
+  influxdb:
+    image: influxdb:2.7
+    container_name: influxdb
+    ports:
+      - "8086:8086"
+    environment:
+      # ${...} come from a local .env file (git-ignored, see .env.example).
+      # The defaults below are for local development only.
+      - DOCKER_INFLUXDB_INIT_MODE=setup
+      - DOCKER_INFLUXDB_INIT_USERNAME=admin
+      - DOCKER_INFLUXDB_INIT_PASSWORD=${INFLUX_ADMIN_PASSWORD:-changeme123}
+      - DOCKER_INFLUXDB_INIT_ORG=disertatie
+      - DOCKER_INFLUXDB_INIT_BUCKET=water_filter
+      - DOCKER_INFLUXDB_INIT_ADMIN_TOKEN=${INFLUX_TOKEN:-changeme}
+    volumes:
+      - influxdb-data:/var/lib/influxdb2
+
+  backend:
+    build: ./backend
+    container_name: backend
+    depends_on:
+      - mosquitto
+      - influxdb
+    environment:
+      - MQTT_BROKER=mosquitto
+      - MQTT_PORT=1883
+      - MQTT_TOPIC=home/water/filter
+      - INFLUX_URL=http://influxdb:8086
+      - INFLUX_TOKEN=${INFLUX_TOKEN:-changeme}
+      - INFLUX_ORG=disertatie
+      - INFLUX_BUCKET=water_filter
+      - CLOG_THRESHOLD_BAR=1.5
+    env_file:
+      - path: .env.secrets
+        required: false
+    ports:
+      - "8000:8000"
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: grafana
+    depends_on:
+      - influxdb
+    ports:
+      - "3000:3000"
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme123}
+      # lets provisioning/datasources/influxdb.yaml substitute ${INFLUX_TOKEN}
+      # instead of hardcoding it
+      - INFLUX_TOKEN=${INFLUX_TOKEN:-changeme}
+    volumes:
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - grafana-data:/var/lib/grafana
+
+volumes:
+  influxdb-data:
+  grafana-data:

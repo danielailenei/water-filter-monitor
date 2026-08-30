@@ -1,0 +1,14 @@
+mqtt:
+  broker: localhost
+  port: 1883
+  topic: home/water/filter
+
+simulation:
+  clogging_rate: 0.0008        # filter degradation constant
+  base_pressure_bar: 0.2       # pressure drop - new filter
+  base_flow_lmin: 15.0         # flow rate - new filter
+  base_turbidity_ntu: 0.5      # turbidity - new filter
+  clog_threshold_bar: 1.5      # pressure above which the filter is "clogged"
+  time_acceleration: 8000      # simulated time speed-up; at 8000 the 80/90/100%
+                               # alert thresholds arrive ~1 min apart instead of at once
+  publish_interval_seconds: 5
