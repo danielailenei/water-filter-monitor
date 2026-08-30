@@ -4,9 +4,9 @@
 
 **Simulated IoT system for real-time water filter health monitoring and clogging-time prediction.**
 
-Dissertation project — virtual sensor, MQTT messaging, time-series storage, ML-based prediction, live dashboard, dual-channel alerting.
+Virtual sensor, MQTT messaging, time-series storage, ML-based prediction, live dashboard, dual-channel alerting.
 
-![Python](https://img.shields.io/badge/Python-3.12-3776AB?logo=python&logoColor=white)
+![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
 ![MQTT](https://img.shields.io/badge/MQTT-Mosquitto-660066?logo=eclipsemosquitto&logoColor=white)
@@ -88,7 +88,7 @@ with Python, for fast iteration during development.
 
 | Component | Technology | Role |
 |---|---|---|
-| Virtual sensor | Python 3.12, `paho-mqtt` | Simulates filter degradation, publishes to MQTT |
+| Virtual sensor | Python 3.11+, `paho-mqtt` | Simulates filter degradation, publishes to MQTT |
 | Message broker | Eclipse Mosquitto 2 | MQTT transport, sensor → backend |
 | Backend | FastAPI, `influxdb-client`, `scikit-learn` | REST API, data ingestion, ML prediction |
 | Database | InfluxDB 2.7 | Time-series storage of readings |
@@ -101,7 +101,8 @@ with Python, for fast iteration during development.
 ## 🚀 Quick start
 
 **Prerequisites:** Docker Desktop (with the WSL2 engine on Windows) and
-Python 3.10+ for the virtual sensor.
+Python 3.11+ for the virtual sensor. The backend runs in a `python:3.11-slim`
+container, so nothing extra is needed for it.
 
 ```bash
 # 1. Copy the env template (defaults are fine for local dev; never commit .env)
