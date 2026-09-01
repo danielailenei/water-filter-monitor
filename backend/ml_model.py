@@ -76,6 +76,7 @@ class FilterPredictor:
         return {
             "status": "ok",
             "days_remaining": round(seconds_remaining / 86400, 2),
+            "seconds_remaining": round(float(seconds_remaining), 1),
             "current_pressure_bar": round(latest_pressure, 3),
             "clog_threshold_bar": self.clog_threshold_bar,
             "degradation_rate_per_hour": round(slope * 3600, 6),

@@ -12,6 +12,7 @@ sensor reading to InfluxDB. Exposes:
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Query
+from fastapi.staticfiles import StaticFiles
 
 from db_writer import DBWriter
 from mqtt_subscriber import MqttSubscriber
@@ -49,7 +50,7 @@ def get_latest():
 
 
 @app.get("/history")
-def get_history(hours: int = Query(24, ge=1, le=24 * 30)):
+def get_history(hours: float = Query(24, ge=0.05, le=24 * 30)):
     readings = db_writer.get_recent_readings(hours=hours)
     return {"count": len(readings), "readings": readings}
 
@@ -58,3 +59,10 @@ def get_history(hours: int = Query(24, ge=1, le=24 * 30)):
 def predict(hours: int = Query(24, ge=1, le=24 * 30)):
     readings = db_writer.get_recent_readings(hours=hours)
     return predictor.predict_days_remaining(readings)
+
+
+# Static dashboard - served on the same origin as the API, so the frontend needs
+# no CORS and there is only one service to expose (e.g. AWS App Runner). Mounted
+# last so it never shadows the API routes above; the directory is relative to the
+# backend working dir (WORKDIR /app in the Dockerfile).
+app.mount("/", StaticFiles(directory="static", html=True), name="ui")

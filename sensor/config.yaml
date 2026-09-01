@@ -9,6 +9,10 @@ simulation:
   base_flow_lmin: 15.0         # flow rate - new filter
   base_turbidity_ntu: 0.5      # turbidity - new filter
   clog_threshold_bar: 1.5      # pressure above which the filter is "clogged"
+  max_pressure_bar: 4.0        # physical ceiling - differential pressure cannot exceed
+                               # the mains supply pressure; the filter is fully blocked here
+  max_turbidity_ntu: 10.0      # physical ceiling - a failed filter's output approaches
+                               # the (cloudy) turbidity of the source water
   time_acceleration: 8000      # simulated time speed-up; at 8000 the 80/90/100%
                                # alert thresholds arrive ~1 min apart instead of at once
   publish_interval_seconds: 5

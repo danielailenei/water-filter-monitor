@@ -28,12 +28,21 @@ def main():
     mqtt_cfg = config["mqtt"]
     sim_cfg = config["simulation"]
 
+    # Env vars override config.yaml so the same code runs unchanged as a plain
+    # local process (config.yaml values) and in a container, where compose sets
+    # MQTT_BROKER=mosquitto (the broker's service name on the compose network).
+    mqtt_cfg["broker"] = os.getenv("MQTT_BROKER", mqtt_cfg["broker"])
+    mqtt_cfg["port"] = int(os.getenv("MQTT_PORT", mqtt_cfg["port"]))
+    mqtt_cfg["topic"] = os.getenv("MQTT_TOPIC", mqtt_cfg["topic"])
+
     model = FilterModel(
         clogging_rate=sim_cfg["clogging_rate"],
         base_pressure=sim_cfg["base_pressure_bar"],
         base_flow=sim_cfg["base_flow_lmin"],
         base_turbidity=sim_cfg["base_turbidity_ntu"],
         clog_threshold_bar=sim_cfg["clog_threshold_bar"],
+        max_pressure_bar=sim_cfg.get("max_pressure_bar", 4.0),
+        max_turbidity_ntu=sim_cfg.get("max_turbidity_ntu", 10.0),
     )
     time_acceleration = sim_cfg["time_acceleration"]
     publish_interval = sim_cfg["publish_interval_seconds"]

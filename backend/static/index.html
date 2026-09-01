@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="ro">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Water Filter Monitor</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header>
+    <h1>💧 Water Filter Monitor</h1>
+    <span id="conn" class="conn" data-state="init">conectare…</span>
+  </header>
+
+  <main>
+    <section class="card gauge-card">
+      <h2>Stare filtru</h2>
+      <div class="gauge">
+        <svg viewBox="0 0 200 200">
+          <circle class="gauge-bg" cx="100" cy="100" r="80"></circle>
+          <circle id="gauge-fg" class="gauge-fg" cx="100" cy="100" r="80"></circle>
+        </svg>
+        <div class="gauge-label">
+          <span id="clog-pct">–</span><span class="unit">%</span>
+          <small id="clog-word">înfundare</small>
+        </div>
+      </div>
+      <p id="clog-note" class="note">—</p>
+    </section>
+
+    <section class="card predict-card">
+      <h2>Predicție</h2>
+      <div class="big-number">
+        <span id="days">–</span><small>estimat până la înfundare</small>
+      </div>
+      <p class="meta">
+        <span id="r2-badge" class="badge">R² –</span>
+        <span id="predict-note" class="note">—</span>
+      </p>
+    </section>
+
+    <section class="card metrics-card">
+      <h2>Măsurători curente</h2>
+      <div class="metrics">
+        <div class="metric">
+          <span class="metric-name">Presiune</span>
+          <span class="metric-value"><span id="m-pressure">–</span> bar</span>
+          <span id="m-pressure-delta" class="delta">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-name">Debit</span>
+          <span class="metric-value"><span id="m-flow">–</span> L/min</span>
+          <span id="m-flow-delta" class="delta">—</span>
+        </div>
+        <div class="metric">
+          <span class="metric-name">Turbiditate</span>
+          <span class="metric-value"><span id="m-turb">–</span> NTU</span>
+          <span id="m-turb-delta" class="delta">—</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="card history-card">
+      <div class="card-head">
+        <h2>Istoric presiune</h2>
+        <div id="range-buttons" class="range-buttons">
+          <button type="button" data-h="0.25">15m</button>
+          <button type="button" data-h="1" class="active">1h</button>
+          <button type="button" data-h="6">6h</button>
+          <button type="button" data-h="24">24h</button>
+        </div>
+      </div>
+      <svg id="spark" class="spark" viewBox="0 0 600 160" preserveAspectRatio="none"></svg>
+      <p id="spark-note" class="note">—</p>
+    </section>
+  </main>
+
+  <footer>
+    <span id="updated">—</span>
+    <a href="http://localhost:3000" target="_blank" rel="noopener">Grafana ↗</a>
+  </footer>
+
+  <script src="app.js"></script>
+</body>
+</html>

@@ -25,7 +25,10 @@ RETRY_DELAY_SECONDS = 3
 SMTP_HOST = os.getenv("SMTP_HOST", "smtp.gmail.com")
 SMTP_PORT = int(os.getenv("SMTP_PORT", "465"))
 SMTP_USER = os.getenv("SMTP_USER", "")
-SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "")
+# Gmail shows app passwords in 4 space-separated groups for readability; the
+# actual secret is the 16 chars with no spaces. Strip them so a copy-paste of
+# the displayed form still works.
+SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").replace(" ", "")
 ALERT_EMAIL_TO = os.getenv("ALERT_EMAIL_TO", "")
 
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")

@@ -42,7 +42,8 @@ filter. The system:
 
 - 📡 collects data over **MQTT**, the standard IoT messaging protocol;
 - 🗄️ stores the full history in a **time-series database** (InfluxDB);
-- 📊 displays it live on an auto-provisioned **Grafana dashboard**;
+- 📊 displays it live on a **built-in dashboard** (served by the backend at
+  `/`) and on an auto-provisioned **Grafana dashboard** for deeper analysis;
 - 🤖 **predicts**, via a regression model, how many days remain before the
   filter fully clogs;
 - 🔔 sends **email + push notifications** (ntfy.sh) at 80%, 90%, and 100% of
@@ -108,18 +109,26 @@ container, so nothing extra is needed for it.
 # 1. Copy the env template (defaults are fine for local dev; never commit .env)
 cp .env.example .env
 
-# 2. Start the infrastructure (Mosquitto, InfluxDB, backend, Grafana)
+# 2. Start the stack: Mosquitto, InfluxDB, backend, virtual sensor
 docker compose up --build
+
+# 2b. (optional) add Grafana - skipped by default so the stack fits a 1 GB VM
+docker compose --profile grafana up --build
 ```
 
 | Service | URL | Auth |
 |---|---|---|
+| 💧 Dashboard | http://localhost:8000 | — |
 | 📊 Grafana | http://localhost:3000 | `admin` / value from `.env` |
 | 🗄️ InfluxDB UI | http://localhost:8086 | `admin` / value from `.env` |
-| ⚙️ Backend API | http://localhost:8000 | — |
+| ⚙️ Backend API | http://localhost:8000/docs | — |
+
+The virtual sensor now runs as a stack service (`sensor/Dockerfile`). To iterate
+on sensor code without rebuilding, stop that container and run it with plain
+Python instead — it reads the same `config.yaml`:
 
 ```bash
-# 3. Start the virtual sensor (separate terminal, plain Python)
+docker compose stop sensor
 cd sensor
 pip install -r requirements.txt
 python virtual_sensor.py
@@ -146,10 +155,15 @@ All endpoints are at `http://localhost:8000` (interactive docs at `/docs`).
 
 | Endpoint | Description |
 |---|---|
+| `GET /` | Built-in dashboard (static HTML/CSS/JS, polls the endpoints below) |
 | `GET /health` | Quick liveness check |
 | `GET /latest` | Latest reading received over MQTT (from memory) |
-| `GET /history?hours=24` | Reading history from InfluxDB (`hours` 1–720) |
+| `GET /history?hours=24` | Reading history from InfluxDB (`hours` 0.05–720, fractional allowed — the dashboard's 15-minute range sends `hours=0.25`) |
 | `GET /predict?hours=24` | Prediction: days remaining until clogging, plus `R²` |
+
+The dashboard is plain static files in `backend/static/`, mounted with FastAPI's
+`StaticFiles`. It shares the backend's origin, so there is no CORS to configure
+and only one service to deploy.
 
 ---
 
@@ -194,7 +208,7 @@ are skipped and the rest of the system runs normally.
 
 | Where | Purpose |
 |---|---|
-| `sensor/config.yaml` | Simulation parameters — clogging rate, base values, `clog_threshold_bar`, `time_acceleration`, publish interval |
+| `sensor/config.yaml` | Simulation parameters — clogging rate, base values, `clog_threshold_bar`, `max_pressure_bar` / `max_turbidity_ntu` (physical ceilings), `time_acceleration`, publish interval |
 | `.env` (from `.env.example`) | MQTT / InfluxDB connection, `CLOG_THRESHOLD_BAR`; also read by `docker-compose.yml` |
 | `.env.secrets` (from `.env.secrets.example`) | SMTP + ntfy.sh credentials for alerting — **never committed** |
 | `docker-compose.yml` | Service definitions, ports, internal network |
@@ -218,11 +232,12 @@ water-filter-monitor/
 │   ├── config.yaml             #   simulation parameters
 │   └── requirements.txt
 ├── backend/                    # FastAPI: MQTT subscriber + InfluxDB + ML prediction + alerting
-│   ├── main.py                 #   app entry point, REST endpoints
+│   ├── main.py                 #   app entry point, REST endpoints, serves static/
 │   ├── mqtt_subscriber.py      #   receives readings, writes them, checks alerts
 │   ├── db_writer.py            #   InfluxDB wrapper (write + query)
 │   ├── ml_model.py             #   clogging-time prediction
 │   ├── alerting.py             #   email + push notifications
+│   ├── static/                 #   built-in dashboard (index.html, style.css, app.js)
 │   ├── Dockerfile
 │   └── requirements.txt
 ├── mosquitto/config/           # Mosquitto broker config

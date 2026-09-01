@@ -34,11 +34,17 @@ class DBWriter:
         )
         self.write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
 
-    def get_recent_readings(self, hours: int = 24) -> list[dict]:
-        """Return readings from the last `hours` hours, oldest first."""
+    def get_recent_readings(self, hours: float = 24) -> list[dict]:
+        """Return readings from the last `hours` hours, oldest first.
+
+        `hours` may be fractional (the dashboard's 15-minute range passes 0.25);
+        the Flux range is built in whole minutes since Flux has no fractional
+        duration literal.
+        """
+        minutes = max(1, round(hours * 60))
         query = f'''
         from(bucket: "{INFLUX_BUCKET}")
-          |> range(start: -{hours}h)
+          |> range(start: -{minutes}m)
           |> filter(fn: (r) => r._measurement == "{MEASUREMENT}")
           |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
           |> sort(columns: ["_time"])
