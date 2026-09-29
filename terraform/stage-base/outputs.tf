@@ -22,3 +22,11 @@ output "private_route_table_id" {
 output "peering_connection_id" {
   value = aws_vpc_peering_connection.stage_shared.id
 }
+
+output "ssm_parameter_arns" {
+  description = "ARN-urile secretelor; task definitions ECS le vor referi"
+  value = merge(
+    { for k, p in aws_ssm_parameter.generated : k => p.arn },
+    { for k, p in aws_ssm_parameter.external : k => p.arn },
+  )
+}
