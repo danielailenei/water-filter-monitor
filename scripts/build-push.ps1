@@ -18,8 +18,10 @@ if (git status --porcelain) { throw "Ai modificari necomise - fa commit inainte 
 $Tag = git rev-parse --short HEAD
 Write-Host "Tag: $Tag"
 
-# Login in ECR cu o parola temporara (12h) generata din credentialele IAM
-aws ecr get-login-password | docker login --username AWS --password-stdin $Registry
+# Login in ECR cu o parola temporara (12h) generata din credentialele IAM.
+# Pipe-ul trece prin cmd: Windows PowerShell 5.1 adauga un BOM UTF-8 la textul
+# trimis prin pipe catre programe externe, iar ECR respinge parola (400 Bad Request).
+cmd /c "aws ecr get-login-password | docker login --username AWS --password-stdin $Registry"
 if ($LASTEXITCODE -ne 0) { throw "Login ECR esuat" }
 
 foreach ($svc in $Services) {
