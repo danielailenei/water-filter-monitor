@@ -8,7 +8,10 @@ param(
     [string[]]$Services = @("backend", "sensor", "mosquitto", "grafana")
 )
 
-$ErrorActionPreference = "Stop"
+# "Continue", nu "Stop": in Windows PowerShell 5.1, cu "Stop", orice text scris de un
+# program extern pe stderr (docker buildx isi scrie progresul acolo) opreste scriptul.
+# Erorile reale le prindem explicit prin $LASTEXITCODE + throw.
+$ErrorActionPreference = "Continue"
 $Registry = "121835991412.dkr.ecr.eu-central-1.amazonaws.com"
 
 if (-not $env:AWS_PROFILE) { throw "Seteaza intai profilul: `$env:AWS_PROFILE = 'wfm'" }
@@ -29,8 +32,10 @@ foreach ($svc in $Services) {
     $image = "$Registry/${repo}:$Tag"
 
     # Idempotent: tag-urile sunt IMMUTABLE, deci nu reconstruim ce exista deja
-    aws ecr describe-images --repository-name $repo --image-ids imageTag=$Tag --output text 2>$null | Out-Null
-    if ($LASTEXITCODE -eq 0) {
+    # list-images nu da eroare cand tag-ul lipseste - intoarce doar un rezultat gol
+    $existing = aws ecr list-images --repository-name $repo --query "imageIds[?imageTag=='$Tag'].imageTag" --output text
+    if ($LASTEXITCODE -ne 0) { throw "Nu pot citi repository-ul $repo" }
+    if ($existing) {
         Write-Host "$image exista deja - sar peste"
         continue
     }
