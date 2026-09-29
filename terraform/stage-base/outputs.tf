@@ -30,3 +30,28 @@ output "ssm_parameter_arns" {
     { for k, p in aws_ssm_parameter.external : k => p.arn },
   )
 }
+
+output "ecs_cluster_name" {
+  value = aws_ecs_cluster.this.name
+}
+
+output "app_security_group_ids" {
+  description = "SG-ul fiecarui serviciu ECS"
+  value       = { for name, sg in aws_security_group.app : name => sg.id }
+}
+
+output "alb_security_group_id" {
+  value = aws_security_group.alb.id
+}
+
+output "efs_file_system_id" {
+  value = aws_efs_file_system.influxdb.id
+}
+
+output "efs_access_point_id" {
+  value = aws_efs_access_point.influxdb.id
+}
+
+output "log_group_names" {
+  value = { for name, lg in aws_cloudwatch_log_group.app : name => lg.name }
+}
