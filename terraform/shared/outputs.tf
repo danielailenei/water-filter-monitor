@@ -27,3 +27,8 @@ output "private_route_table_id" {
   description = "Tabela privata (stage-base adauga aici ruta de peering)"
   value       = module.network.private_route_table_id
 }
+
+output "ecr_repository_urls" {
+  description = "URL-urile repository-urilor ECR (unde urcam imaginile)"
+  value       = { for name, repo in aws_ecr_repository.app : name => repo.repository_url }
+}
