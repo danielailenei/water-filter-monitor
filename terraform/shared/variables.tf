@@ -3,3 +3,9 @@ variable "aws_region" {
   type        = string
   default     = "eu-central-1"
 }
+
+variable "jumphost_running" {
+  description = "true = JumpHost pornit, false = oprit (platesti doar discul)"
+  type        = bool
+  default     = false
+}
