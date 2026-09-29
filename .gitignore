@@ -28,3 +28,22 @@ docs/
 
 # Local .env (development values) - see .env.example for the template
 .env
+
+# Terraform
+# Providerii si modulele descarcate de `terraform init` (se regeneaza oricum)
+.terraform/
+
+# State-ul: ID-uri de resurse si uneori SECRETE in clar. Sta doar in S3.
+*.tfstate
+*.tfstate.*
+# Variabile cu valori reale (IP-ul tau, parole). Exemplele se versioneaza.
+*.tfvars
+!*.tfvars.example
+# Planuri salvate cu `terraform plan -out` (pot contine secrete)
+*.tfplan
+# Loguri de crash
+crash.log
+crash.*.log
+
+# Instructiuni locale pentru Claude
+CLAUDE.md
