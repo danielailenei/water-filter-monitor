@@ -14,3 +14,12 @@ output "execution_role_arn" {
 output "task_role_arn" {
   value = aws_iam_role.task.arn
 }
+
+output "service_discovery_namespace" {
+  value = aws_service_discovery_private_dns_namespace.this.name
+}
+
+output "service_discovery_arns" {
+  description = "ECS services se leaga de aceste ARN-uri (service_registries)"
+  value       = { for name, s in aws_service_discovery_service.app : name => s.arn }
+}
