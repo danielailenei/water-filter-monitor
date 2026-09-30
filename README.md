@@ -4,15 +4,17 @@
 
 **Simulated IoT system for real-time water filter health monitoring and clogging-time prediction.**
 
-Virtual sensor, MQTT messaging, time-series storage, ML-based prediction, live dashboard, dual-channel alerting.
+Virtual sensor, MQTT messaging, time-series storage, ML-based prediction, live dashboard, dual-channel alerting —
+running locally with Docker Compose and on AWS (ECS Fargate) provisioned with Terraform.
 
 ![Python](https://img.shields.io/badge/Python-3.11+-3776AB?logo=python&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-Compose-2496ED?logo=docker&logoColor=white)
 ![FastAPI](https://img.shields.io/badge/FastAPI-backend-009688?logo=fastapi&logoColor=white)
 ![MQTT](https://img.shields.io/badge/MQTT-Mosquitto-660066?logo=eclipsemosquitto&logoColor=white)
 ![InfluxDB](https://img.shields.io/badge/InfluxDB-2.7-22ADF6?logo=influxdb&logoColor=white)
-![Grafana](https://img.shields.io/badge/Grafana-dashboard-F46800?logo=grafana&logoColor=white)
+![Grafana](https://img.shields.io/badge/Grafana-13-F46800?logo=grafana&logoColor=white)
 ![scikit--learn](https://img.shields.io/badge/scikit--learn-ML%20prediction-F7931E?logo=scikitlearn&logoColor=white)
+![Terraform](https://img.shields.io/badge/Terraform-AWS-7B42BC?logo=terraform&logoColor=white)
 
 </div>
 
@@ -23,7 +25,8 @@ Virtual sensor, MQTT messaging, time-series storage, ML-based prediction, live d
 - [What it does](#-what-it-does)
 - [Architecture](#-architecture)
 - [Tech stack](#-tech-stack)
-- [Quick start](#-quick-start)
+- [Quick start (local)](#-quick-start-local)
+- [Deployment on AWS](#-deployment-on-aws)
 - [Backend API](#-backend-api)
 - [How the prediction works](#-how-the-prediction-works)
 - [Alerting](#-alerting)
@@ -44,7 +47,7 @@ filter. The system:
 - 🗄️ stores the full history in a **time-series database** (InfluxDB);
 - 📊 displays it live on a **built-in dashboard** (served by the backend at
   `/`) and on an auto-provisioned **Grafana dashboard** for deeper analysis;
-- 🤖 **predicts**, via a regression model, how many days remain before the
+- 🤖 **predicts**, via a regression model, how long remains before the
   filter fully clogs;
 - 🔔 sends **email + push notifications** (ntfy.sh) at 80%, 90%, and 100% of
   clogging capacity, with automatic retry on transient network failures.
@@ -55,23 +58,26 @@ filter. The system:
 
 ```mermaid
 flowchart LR
-    S["🌡️ Virtual sensor<br/>Python, runs locally"]
+    S["🌡️ Virtual sensor<br/>Python"]
     M["📡 Mosquitto<br/>MQTT broker · :1883"]
-    B["⚙️ FastAPI backend<br/>:8000"]
+    W["🔁 Worker<br/>ingest + alerting"]
+    B["⚙️ FastAPI backend<br/>API + dashboard · :8000"]
     I[("🗄️ InfluxDB<br/>:8086")]
     G["📊 Grafana<br/>:3000"]
-    C["💻 REST client<br/>browser / curl"]
-    A["🔔 Alerting<br/>email + push (ntfy.sh)"]
+    C["💻 Browser<br/>dashboard / REST"]
+    A["🔔 Alerts<br/>email + push (ntfy.sh)"]
 
     S -- "publish JSON" --> M
-    M -- "subscribe" --> B
-    B -- "writes points" --> I
+    M -- "subscribe" --> W
+    W -- "writes points" --> I
+    W -- "threshold crossed" --> A
+    I -- "queries" --> B
     I -- "queries (Flux)" --> G
-    B -- "/latest /history /predict" --> C
-    B -- "threshold crossed" --> A
+    B -- "/ /latest /history /predict" --> C
 
     style S fill:#2b2b2b,stroke:#7dd3fc,color:#fff
     style M fill:#2b2b2b,stroke:#c084fc,color:#fff
+    style W fill:#2b2b2b,stroke:#a3e635,color:#fff
     style B fill:#2b2b2b,stroke:#34d399,color:#fff
     style I fill:#2b2b2b,stroke:#38bdf8,color:#fff
     style G fill:#2b2b2b,stroke:#fb923c,color:#fff
@@ -79,9 +85,13 @@ flowchart LR
     style A fill:#2b2b2b,stroke:#facc15,color:#fff
 ```
 
-4 of the 5 components (Mosquitto, InfluxDB, backend, Grafana) run in Docker
-containers, started with a single command. The virtual sensor runs natively
-with Python, for fast iteration during development.
+Every component runs as a container. The **worker** (one instance) is the
+only MQTT subscriber: it stores each reading and sends the alerts. The
+**backend** only reads from InfluxDB, so it is stateless and can run as several
+replicas; both use the same image with a different command. The same images
+run locally (Docker Compose) and on AWS (ECS Fargate); only the addresses
+differ — compose service names locally, `*.wfm.local` (AWS Cloud Map) and
+CloudFront on AWS.
 
 ---
 
@@ -90,30 +100,32 @@ with Python, for fast iteration during development.
 | Component | Technology | Role |
 |---|---|---|
 | Virtual sensor | Python 3.11+, `paho-mqtt` | Simulates filter degradation, publishes to MQTT |
-| Message broker | Eclipse Mosquitto 2 | MQTT transport, sensor → backend |
-| Backend | FastAPI, `influxdb-client`, `scikit-learn` | REST API, data ingestion, ML prediction |
+| Message broker | Eclipse Mosquitto 2 | MQTT transport, sensor → worker |
+| Worker | Python, `paho-mqtt`, `influxdb-client` | Single instance: stores readings, sends alerts, keeps alert state in InfluxDB |
+| Backend | FastAPI, `influxdb-client`, `scikit-learn` | Stateless REST API, ML prediction, built-in dashboard |
 | Database | InfluxDB 2.7 | Time-series storage of readings |
-| Visualization | Grafana | Live dashboard, auto-provisioned |
+| Visualization | Grafana 13 | Live dashboard, auto-provisioned |
 | Alerting | `smtplib` (SMTP) + ntfy.sh | Email + phone push at 80/90/100% clogging |
-| Orchestration | Docker Compose | Start/stop the whole stack with one command |
+| Local orchestration | Docker Compose | Start/stop the whole stack with one command |
+| Cloud | AWS ECS Fargate (ARM64), ALB, CloudFront, EFS, Cloud Map, SSM | Production-like deployment |
+| Infrastructure as code | Terraform (S3 remote state) | Layered, create/destroy on demand |
 
 ---
 
-## 🚀 Quick start
+## 🚀 Quick start (local)
 
-**Prerequisites:** Docker Desktop (with the WSL2 engine on Windows) and
-Python 3.11+ for the virtual sensor. The backend runs in a `python:3.11-slim`
-container, so nothing extra is needed for it.
+**Prerequisites:** Docker Desktop (with the WSL2 engine on Windows).
 
 ```bash
 # 1. Copy the env template (defaults are fine for local dev; never commit .env)
 cp .env.example .env
 
-# 2. Start the stack: Mosquitto, InfluxDB, backend, virtual sensor
-docker compose up --build
+# 2. Start the whole stack: Mosquitto, InfluxDB, worker, backend, virtual sensor, Grafana
+docker compose up -d --build
 
-# 2b. (optional) add Grafana - skipped by default so the stack fits a 1 GB VM
-docker compose --profile grafana up --build
+# 3. Verify
+curl.exe http://localhost:8000/latest
+curl.exe http://localhost:8000/predict
 ```
 
 | Service | URL | Auth |
@@ -123,9 +135,11 @@ docker compose --profile grafana up --build
 | 🗄️ InfluxDB UI | http://localhost:8086 | `admin` / value from `.env` |
 | ⚙️ Backend API | http://localhost:8000/docs | — |
 
-The virtual sensor now runs as a stack service (`sensor/Dockerfile`). To iterate
-on sensor code without rebuilding, stop that container and run it with plain
-Python instead — it reads the same `config.yaml`:
+In Grafana the *"Water Filter Monitor"* dashboard is already provisioned, with
+charts refreshing every 5 seconds.
+
+To iterate on the sensor without rebuilding its image, stop the container and
+run it with plain Python — it reads the same `config.yaml`:
 
 ```bash
 docker compose stop sensor
@@ -134,36 +148,91 @@ pip install -r requirements.txt
 python virtual_sensor.py
 ```
 
-```bash
-# 4. Verify
-curl.exe http://localhost:8000/latest
-curl.exe http://localhost:8000/predict
-```
-
-Open **Grafana** → the *"Water Filter Monitor"* dashboard is already
-provisioned, with charts refreshing every 5 seconds.
-
 > 🔔 To enable email/push alerts, copy `.env.secrets.example` to
 > `.env.secrets` and fill in your SMTP credentials and ntfy.sh topic (see
-> comments in the file for setup instructions).
+> comments in the file).
+
+---
+
+## ☁️ Deployment on AWS
+
+The infrastructure lives in `terraform/`, split into layers with separate
+state files in S3. The permanent layers cost almost nothing; the expensive
+one (`stage-app`) is created and destroyed on demand.
+
+```mermaid
+flowchart LR
+    U["👤 Browser"] -- "HTTPS" --> CF["CloudFront<br/>*.cloudfront.net"]
+    CF -- "HTTP + secret header" --> ALB["ALB<br/>public subnets"]
+    subgraph VPC["VPC stage 10.0.0.0/16 — private subnets, 2 AZ"]
+        B["backend<br/>1–3 tasks, autoscaled"]
+        G["grafana"]
+        M["mosquitto"]
+        W["worker<br/>1 task"]
+        I["influxdb"]
+        S["sensor"]
+    end
+    ALB -- "/" --> B
+    ALB -- "/grafana/*" --> G
+    S --> M --> W --> I
+    B --> I
+    G --> I
+    I --- EFS[("EFS<br/>InfluxDB data")]
+    W -- "NAT" --> N["SMTP · ntfy.sh"]
+```
+
+| Layer | What it creates | Lifetime |
+|---|---|---|
+| `bootstrap/` | S3 bucket for Terraform state (versioned, encrypted) | permanent, local state |
+| `shared/` | VPC `10.3.0.0/16`, ECR repositories, JumpHost (SSM only, stopped by default) | permanent |
+| `stage-base/` | VPC `10.0.0.0/16` + peering, security groups, EFS, ECS cluster, log groups, secrets in SSM Parameter Store | permanent |
+| `stage-app/` | NAT gateway, IAM task roles, Cloud Map (`wfm.local`), task definitions, 6 ECS services, ALB, CloudFront, backend autoscaling | **on demand** (~0.15 $/h) |
+| `modules/network/` | reusable VPC module (public/private subnets in 2 AZ) | — |
+
+Highlights:
+
+- **ARM64 (Graviton) Fargate** tasks in private subnets; outbound traffic through NAT.
+- **Secrets** in SSM Parameter Store (`SecureString`), injected by ECS; generated
+  ones never touch the Terraform state (ephemeral + write-only).
+- **HTTPS** via CloudFront's default certificate. The ALB accepts only the
+  CloudFront prefix list **and** a secret origin header (403 otherwise).
+- **InfluxDB data on EFS**, so it survives `stage-app` destroy/create.
+- **Single-instance services** (InfluxDB, sensor, worker) deploy
+  stop-then-start, so two copies never run at once (shared files, a second
+  simulated filter, duplicate alerts).
+- **Autoscaling**: the stateless backend scales 1–3 tasks on 50% average CPU.
+
+Deploy (AWS CLI profile and Terraform configured; images built first):
+
+```powershell
+$env:AWS_PROFILE = "wfm"
+powershell -ExecutionPolicy Bypass -File .\scripts\build-push.ps1   # ARM64 images -> ECR, tag = commit SHA
+cd terraform\stage-app
+terraform apply                                                      # ~5 min, prints app_url
+terraform destroy                                                    # when done (~10 min, CloudFront)
+```
+
+Helper scripts: `scripts/build-push.ps1` (build + push to ECR),
+`scripts/set-stage-secrets.ps1` (upload `.env.secrets` to SSM),
+`scripts/load-test.py` (load generator for the autoscaling test).
 
 ---
 
 ## 📡 Backend API
 
-All endpoints are at `http://localhost:8000` (interactive docs at `/docs`).
+Locally at `http://localhost:8000` (interactive docs at `/docs`); on AWS at the CloudFront address.
 
 | Endpoint | Description |
 |---|---|
 | `GET /` | Built-in dashboard (static HTML/CSS/JS, polls the endpoints below) |
-| `GET /health` | Quick liveness check |
-| `GET /latest` | Latest reading received over MQTT (from memory) |
-| `GET /history?hours=24` | Reading history from InfluxDB (`hours` 0.05–720, fractional allowed — the dashboard's 15-minute range sends `hours=0.25`) |
-| `GET /predict?hours=24` | Prediction: days remaining until clogging, plus `R²` |
+| `GET /health` | Quick liveness check (also used by the ALB) |
+| `GET /latest` | Most recent reading (last point in InfluxDB) |
+| `GET /history?hours=24` | Reading history from InfluxDB (`hours` 0.05–720, fractional allowed) |
+| `GET /predict?hours=24` | Prediction: time remaining until clogging, plus `R²` |
+| `GET /config` | Public links for the dashboard (Grafana URL for the current environment) |
 
 The dashboard is plain static files in `backend/static/`, mounted with FastAPI's
-`StaticFiles`. It shares the backend's origin, so there is no CORS to configure
-and only one service to deploy.
+`StaticFiles`. It shares the backend's origin, so there is no CORS to configure.
 
 ---
 
@@ -188,19 +257,25 @@ sensor readings.
 
 ## 🔔 Alerting
 
-`alerting.py` runs inside the MQTT message handler. On every reading it
+`alerting.py` runs in the worker's MQTT message handler. On every reading it
 computes the clogging percentage (`pressure ÷ threshold`) and fires a
 notification when it crosses **80%, 90%, 100%**:
 
-- each threshold fires **once per filter cycle** (fired thresholds are kept
-  in a set, so a reading every 5 s doesn't produce hundreds of alerts);
+- each threshold fires **once per filter cycle**; the thresholds already
+  notified are also saved in InfluxDB (`alert_event`) and restored when the
+  worker starts, so a restart or redeploy does not repeat them;
+- the worker runs as a **single instance** — alerting lives outside the
+  scalable API, otherwise every API replica would send its own copy;
 - if pressure drops below 50% (filter replaced / sensor restarted) the set
   resets, so the next cycle can alert again;
 - each send (email over SMTP + push via [ntfy.sh](https://ntfy.sh)) is
-  retried up to 3 times, so a transient network error doesn't drop an alert.
+  retried up to 3 times, so a transient network error doesn't drop an alert;
+- alerts link to the dashboard and to Grafana (`APP_URL`, `GRAFANA_URL`);
+  tapping the push notification opens the dashboard.
 
-Credentials come only from `.env.secrets` (git-ignored). Without them, alerts
-are skipped and the rest of the system runs normally.
+Credentials come from `.env.secrets` locally (git-ignored) and from SSM
+Parameter Store on AWS. Without them, alerts are skipped and the rest of the
+system runs normally.
 
 ---
 
@@ -208,14 +283,16 @@ are skipped and the rest of the system runs normally.
 
 | Where | Purpose |
 |---|---|
-| `sensor/config.yaml` | Simulation parameters — clogging rate, base values, `clog_threshold_bar`, `max_pressure_bar` / `max_turbidity_ntu` (physical ceilings), `time_acceleration`, publish interval |
-| `.env` (from `.env.example`) | MQTT / InfluxDB connection, `CLOG_THRESHOLD_BAR`; also read by `docker-compose.yml` |
+| `sensor/config.yaml` | Simulation parameters — clogging rate, base values, `clog_threshold_bar`, physical ceilings, `time_acceleration`, publish interval |
+| `.env` (from `.env.example`) | Local passwords/token read by `docker-compose.yml`; connection values for running the Python code outside Docker |
 | `.env.secrets` (from `.env.secrets.example`) | SMTP + ntfy.sh credentials for alerting — **never committed** |
-| `docker-compose.yml` | Service definitions, ports, internal network |
-| `grafana/provisioning/` | Datasource + dashboard, applied automatically on start |
+| `docker-compose.yml` | Local services, ports, volumes, `APP_URL` / `GRAFANA_URL` |
+| `grafana/provisioning/` | Datasource + dashboard, baked into the Grafana image |
+| `terraform/stage-app/task-definitions.tf` | Same settings for AWS (addresses, sizes, secrets from SSM) |
 
-> Mosquitto is configured with anonymous access (`allow_anonymous true`) for
-> local development only. For anything exposed, add authentication and TLS.
+> Mosquitto allows anonymous access (`allow_anonymous true`) — fine for local
+> development; on AWS it is reachable only from the sensor and worker
+> security groups. For a real device fleet, add authentication and TLS.
 
 ---
 
@@ -223,25 +300,27 @@ are skipped and the rest of the system runs normally.
 
 ```
 water-filter-monitor/
-├── docker-compose.yml
-├── .env.example                # dev config template  ->  copy to .env
-├── .env.secrets.example        # alerting credentials template  ->  copy to .env.secrets
+├── docker-compose.yml          # local stack (same images as AWS)
+├── .env.example                # local config template        ->  copy to .env
+├── .env.secrets.example        # alerting credentials template ->  copy to .env.secrets
 ├── sensor/                     # virtual sensor (Python, MQTT publisher)
 │   ├── virtual_sensor.py       #   main loop: compute reading, publish to MQTT
 │   ├── filter_model.py         #   mathematical degradation model
-│   ├── config.yaml             #   simulation parameters
-│   └── requirements.txt
-├── backend/                    # FastAPI: MQTT subscriber + InfluxDB + ML prediction + alerting
-│   ├── main.py                 #   app entry point, REST endpoints, serves static/
+│   └── config.yaml             #   simulation parameters
+├── backend/                    # one image, two entry points
+│   ├── main.py                 #   API: REST endpoints + ML prediction, serves static/
+│   ├── worker.py               #   worker: MQTT -> InfluxDB + alerts (single instance)
 │   ├── mqtt_subscriber.py      #   receives readings, writes them, checks alerts
-│   ├── db_writer.py            #   InfluxDB wrapper (write + query)
+│   ├── db_writer.py            #   InfluxDB wrapper (readings + alert state)
 │   ├── ml_model.py             #   clogging-time prediction
 │   ├── alerting.py             #   email + push notifications
-│   ├── static/                 #   built-in dashboard (index.html, style.css, app.js)
-│   ├── Dockerfile
-│   └── requirements.txt
-├── mosquitto/config/           # Mosquitto broker config
-└── grafana/provisioning/       # datasource + dashboard, applied automatically
+│   └── static/                 #   built-in dashboard (index.html, style.css, app.js)
+├── mosquitto/                  # broker config, baked into a custom image
+├── grafana/                    # pinned Grafana + provisioning, baked into a custom image
+├── scripts/                    # build-push.ps1, set-stage-secrets.ps1, load-test.py
+└── terraform/                  # AWS infrastructure (see "Deployment on AWS")
+    ├── bootstrap/  shared/  stage-base/  stage-app/
+    └── modules/network/
 ```
 
 ---
@@ -255,17 +334,15 @@ water-filter-monitor/
 intercepting. Install real Python (`winget install Python.Python.3.12`) and
 reopen the terminal.
 
-**Grafana shows "No data" on every panel** — usually one of: the sensor
-isn't running (`curl.exe http://localhost:8000/latest` returns `no_data`);
-the selected time range doesn't cover the data (widen it, top right); or the
-datasource UID got out of sync after a manual edit — reset it with:
-
-```bash
-docker compose rm -sf grafana
-docker volume rm water-filter-monitor_grafana-data
-docker compose up -d grafana
-```
+**Grafana shows "No data" on every panel** — usually the sensor isn't
+running (`curl.exe http://localhost:8000/latest` returns `no_data`) or the
+selected time range doesn't cover the data (widen it, top right).
 
 **`docker compose up` fails with a WSL2 / virtualization error** — enable the
 missing Windows components: run `wsl --install --no-distribution` as
 Administrator, then restart.
+
+**ECS task keeps restarting on AWS** — check its log group
+(`/ecs/wfm-stage/<service>` in CloudWatch). A sensor task that starts before
+Mosquitto is registered in Cloud Map fails once and is restarted by ECS; that
+is expected.

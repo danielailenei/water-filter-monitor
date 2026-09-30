@@ -7,8 +7,12 @@ Each threshold fires once per filter cycle. If the pressure drops sharply
 can alert again. Every send is retried a few times so a transient network
 error does not silently drop an alert.
 
+Which thresholds already fired is saved in InfluxDB (alert_event), so a
+restart or redeploy of the worker does not notify the same cycle twice.
+
 Configuration via environment variables (see .env.secrets.example):
     SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, ALERT_EMAIL_TO, NTFY_TOPIC
+    APP_URL, GRAFANA_URL - public links put in the alerts (localhost by default)
 """
 
 import os
@@ -34,6 +38,11 @@ ALERT_EMAIL_TO = os.getenv("ALERT_EMAIL_TO", "")
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
 NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
 
+# Where the alert links point: localhost for docker compose, the CloudFront
+# address on AWS (set in the ECS task definition).
+APP_URL = os.getenv("APP_URL", "http://localhost:8000").rstrip("/")
+GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000").rstrip("/")
+
 THRESHOLDS = [80, 90, 100]
 RESET_BELOW_PCT = 50  # below this we assume the filter was replaced
 
@@ -58,12 +67,30 @@ def _with_retry(description: str, func, attempts: int = RETRY_ATTEMPTS,
 
 
 class AlertManager:
-    def __init__(self):
+    def __init__(self, store=None):
+        # store: DBWriter (or anything with write_alert_event / get_fired_thresholds);
+        # None keeps the state in memory only.
+        self._store = store
         self._fired = set()  # thresholds already notified in the current cycle
+        if store is not None:
+            try:
+                self._fired = store.get_fired_thresholds()
+                print(f"[alerting] restored state: already notified {sorted(self._fired) or 'nothing'}")
+            except Exception as e:
+                print(f"[alerting] could not restore state, starting empty: {e}")
+
+    def _record(self, kind: str, threshold: int = 0):
+        if self._store is None:
+            return
+        try:
+            self._store.write_alert_event(kind, threshold)
+        except Exception as e:
+            print(f"[alerting] could not save alert state: {e}")
 
     def reset(self):
         if self._fired:
             print("[alerting] filter reset (low pressure) - re-arming thresholds.")
+            self._record("reset")
         self._fired.clear()
 
     def check_and_notify(self, pressure_drop_bar: float, clog_threshold_bar: float):
@@ -77,6 +104,7 @@ class AlertManager:
         for threshold in THRESHOLDS:
             if pct >= threshold and threshold not in self._fired:
                 self._fired.add(threshold)
+                self._record("sent", threshold)
                 self._send_alert(threshold, pressure_drop_bar, clog_threshold_bar)
 
     def _send_alert(self, threshold: int, pressure_drop_bar: float, clog_threshold_bar: float):
@@ -101,7 +129,8 @@ class AlertManager:
             f"{advice}\n\n"
             f"Current differential pressure: {pressure_drop_bar:.2f} bar "
             f"(clog threshold: {clog_threshold_bar:.2f} bar)\n\n"
-            f"Grafana dashboard: http://localhost:3000"
+            f"Dashboard: {APP_URL}\n"
+            f"Grafana: {GRAFANA_URL}"
         )
 
         self._send_email(subject, body)
@@ -139,6 +168,9 @@ class AlertManager:
                     "Title": subject.encode("utf-8"),
                     "Priority": "urgent" if "CLOGGED" in subject else "default",
                     "Tags": "droplet",
+                    # Tapping the notification opens the dashboard; a button opens Grafana
+                    "Click": APP_URL,
+                    "Actions": f"view, Grafana, {GRAFANA_URL}",
                 },
                 timeout=5,
             )
@@ -146,6 +178,3 @@ class AlertManager:
 
         if _with_retry(f"push '{subject}'", _do_send):
             print(f"[alerting] push sent: {subject}")
-
-
-alert_manager = AlertManager()
