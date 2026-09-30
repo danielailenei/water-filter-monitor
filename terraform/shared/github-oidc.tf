@@ -12,7 +12,8 @@ locals {
   oidc_host    = "token.actions.githubusercontent.com"
   state_bucket = "wfm-tfstate-${local.account_id}"
 
-  # "sub" din token-ul GitHub: identitatea exacta a job-ului
+  # "sub" din token-ul GitHub: identitatea exacta a job-ului, ex.
+  # repo:danielailenei@234817575/water-filter-monitor@1351462053:ref:refs/heads/main
   github_sub_main  = "repo:${var.github_repository}:ref:refs/heads/main" # push / dispatch pe main
   github_sub_stage = "repo:${var.github_repository}:environment:stage"   # job cu environment: stage
 }

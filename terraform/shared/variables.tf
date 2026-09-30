@@ -11,7 +11,12 @@ variable "jumphost_running" {
 }
 
 variable "github_repository" {
-  description = "Repo-ul GitHub (owner/nume) ale carui workflow-uri pot prelua rolurile OIDC"
+  description = <<-EOT
+    Repo-ul GitHub ale carui workflow-uri pot prelua rolurile OIDC, in formatul IMUTABIL
+    folosit de repo in claim-ul "sub": owner@<id owner>/repo@<id repo>. ID-urile nu se schimba
+    la redenumire; un repo sters si recreat cu acelasi nume primeste alt ID -> nu preia rolurile.
+    Verificare: gh api repos/<owner>/<repo>/actions/oidc/customization/sub
+  EOT
   type        = string
-  default     = "danielailenei/water-filter-monitor"
+  default     = "danielailenei@234817575/water-filter-monitor@1351462053"
 }
