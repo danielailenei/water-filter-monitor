@@ -38,6 +38,25 @@ resource "aws_ecs_service" "app" {
     }
   }
 
-  # Taskurile au nevoie de internet (ECR, SSM, loguri) inainte sa porneasca
-  depends_on = [aws_route.private_to_internet]
+  # Doar backend si grafana primesc trafic de la ALB; ECS le inregistreaza singur IP-urile
+  dynamic "load_balancer" {
+    for_each = contains(keys(local.alb_targets), each.key) ? [1] : []
+
+    content {
+      target_group_arn = aws_lb_target_group.app[each.key].arn
+      container_name   = each.key
+      container_port   = local.alb_targets[each.key].port
+    }
+  }
+
+  # Timp de gratie la pornire: health check-urile ALB nu omoara taskul cat inca porneste
+  # (valid doar pentru servicii cu load balancer)
+  health_check_grace_period_seconds = contains(keys(local.alb_targets), each.key) ? 60 : null
+
+  # Internet (ECR, SSM, loguri) inainte de pornire; target group-urile legate de ALB
+  depends_on = [
+    aws_route.private_to_internet,
+    aws_lb_listener.http,
+    aws_lb_listener_rule.grafana,
+  ]
 }

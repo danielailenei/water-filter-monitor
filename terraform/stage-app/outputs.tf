@@ -1,3 +1,8 @@
+output "alb_dns_name" {
+  description = "Adresa ALB-ului (accesibila doar prin CloudFront, vezi SG-ul din stage-base)"
+  value       = aws_lb.this.dns_name
+}
+
 output "nat_gateway_id" {
   value = aws_nat_gateway.this.id
 }
