@@ -6,3 +6,11 @@ output "nat_public_ip" {
   description = "IP-ul cu care ies taskurile in internet"
   value       = aws_eip.nat.public_ip
 }
+
+output "execution_role_arn" {
+  value = aws_iam_role.execution.arn
+}
+
+output "task_role_arn" {
+  value = aws_iam_role.task.arn
+}
