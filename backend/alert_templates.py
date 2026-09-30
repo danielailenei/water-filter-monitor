@@ -56,7 +56,9 @@ def build_alert(threshold: int, pressure: float, clog_threshold: float,
     """Everything the senders need: subject, plain text, HTML, push title/body."""
     lv = LEVELS[threshold]
     reading = reading or {}
-    pct = pressure / clog_threshold * 100 if clog_threshold else 0
+    # Clogging stops at 100% - past the threshold the filter is simply clogged
+    # (the pressure itself is still reported as measured)
+    pct = min(pressure / clog_threshold * 100, 100) if clog_threshold else 0
     now = datetime.now(LOCAL_TZ).strftime("%d.%m.%Y, %H:%M")
 
     # Measurements that exist in this reading, in display order
@@ -71,7 +73,7 @@ def build_alert(threshold: int, pressure: float, clog_threshold: float,
 
     # ---- plain text (fallback for clients without HTML) ----
     text = "\n".join(
-        [lv["headline"] + f" ({pct:.0f}% din prag)", "", lv["advice"], ""]
+        [lv["headline"] + f" ({pct:.0f}% înfundare)", "", lv["advice"], ""]
         + [f"{k}: {v}" for k, v in rows]
         + ["", f"Dashboard: {app_url}", f"Grafana: {grafana_url}", "", f"Water Filter Monitor · {now}"]
     )
@@ -104,7 +106,7 @@ def build_alert(threshold: int, pressure: float, clog_threshold: float,
       </tr></table>
       <p style="margin:6px 0 18px;font-size:13px;color:#6b7280">
         <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:{lv['tint']};
-              color:{lv['color']};font-weight:700">{pct:.0f}%</span>&nbsp; din pragul de înfundare
+              color:{lv['color']};font-weight:700">{pct:.0f}%</span>&nbsp; înfundare (pragul: presiune de {clog_threshold:.2f} bar)
       </p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">{rows_html}</table>
     </td></tr>
@@ -123,7 +125,7 @@ def build_alert(threshold: int, pressure: float, clog_threshold: float,
 </body></html>"""
 
     # ---- ntfy push: short, like a real notification (markdown for the bold values) ----
-    push_lines = [f"**{pct:.0f}%** din prag · presiune **{pressure:.2f} bar**"]
+    push_lines = [f"**{pct:.0f}%** înfundare · presiune **{pressure:.2f} bar**"]
     details = [f"{k} {v}" for k, v in rows[1:3] if k in ("Debit", "Turbiditate")]
     if details:
         push_lines.append(" · ".join(details))

@@ -127,7 +127,11 @@ function renderLatest() {
   const lv = level(pct);
   fg.style.strokeDashoffset = CIRC * (1 - Math.min(Math.max(pct, 0), 100) / 100);
   fg.style.stroke = `var(--${lv.level})`;
-  $("clog-pct").textContent = Math.round(pct);
+  // Clogging is a percentage of the threshold and stops at 100%: the pressure
+  // keeps rising afterwards (up to the mains ceiling), but the filter is simply
+  // clogged. How far past the threshold shows in "Presiune / prag" below.
+  $("clog-pct").textContent = Math.min(Math.round(pct), 100);
+  $("clog-unit").textContent = pct >= 100 ? "% · prag depășit" : "% înfundare";
   $("state-chip").textContent = lv.text;
   $("state-chip").dataset.level = lv.level;
   $("pressure-vs-threshold").textContent = `${fmt(p, 3)} / ${fmt(state.threshold, 1)} bar`;
