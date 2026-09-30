@@ -60,21 +60,24 @@ filter. The system:
 flowchart LR
     S["🌡️ Virtual sensor<br/>Python"]
     M["📡 Mosquitto<br/>MQTT broker · :1883"]
-    B["⚙️ FastAPI backend<br/>:8000"]
+    W["🔁 Worker<br/>ingest + alerting"]
+    B["⚙️ FastAPI backend<br/>API + dashboard · :8000"]
     I[("🗄️ InfluxDB<br/>:8086")]
     G["📊 Grafana<br/>:3000"]
     C["💻 Browser<br/>dashboard / REST"]
-    A["🔔 Alerting<br/>email + push (ntfy.sh)"]
+    A["🔔 Alerts<br/>email + push (ntfy.sh)"]
 
     S -- "publish JSON" --> M
-    M -- "subscribe" --> B
-    B -- "writes points" --> I
+    M -- "subscribe" --> W
+    W -- "writes points" --> I
+    W -- "threshold crossed" --> A
+    I -- "queries" --> B
     I -- "queries (Flux)" --> G
     B -- "/ /latest /history /predict" --> C
-    B -- "threshold crossed" --> A
 
     style S fill:#2b2b2b,stroke:#7dd3fc,color:#fff
     style M fill:#2b2b2b,stroke:#c084fc,color:#fff
+    style W fill:#2b2b2b,stroke:#a3e635,color:#fff
     style B fill:#2b2b2b,stroke:#34d399,color:#fff
     style I fill:#2b2b2b,stroke:#38bdf8,color:#fff
     style G fill:#2b2b2b,stroke:#fb923c,color:#fff
@@ -82,9 +85,13 @@ flowchart LR
     style A fill:#2b2b2b,stroke:#facc15,color:#fff
 ```
 
-All five components run as containers. The same images run locally (Docker
-Compose) and on AWS (ECS Fargate); only the addresses differ — compose service
-names locally, `*.wfm.local` (AWS Cloud Map) and CloudFront on AWS.
+Every component runs as a container. The **worker** (one instance) is the
+only MQTT subscriber: it stores each reading and sends the alerts. The
+**backend** only reads from InfluxDB, so it is stateless and can run as several
+replicas; both use the same image with a different command. The same images
+run locally (Docker Compose) and on AWS (ECS Fargate); only the addresses
+differ — compose service names locally, `*.wfm.local` (AWS Cloud Map) and
+CloudFront on AWS.
 
 ---
 
@@ -93,8 +100,9 @@ names locally, `*.wfm.local` (AWS Cloud Map) and CloudFront on AWS.
 | Component | Technology | Role |
 |---|---|---|
 | Virtual sensor | Python 3.11+, `paho-mqtt` | Simulates filter degradation, publishes to MQTT |
-| Message broker | Eclipse Mosquitto 2 | MQTT transport, sensor → backend |
-| Backend | FastAPI, `influxdb-client`, `scikit-learn` | REST API, data ingestion, ML prediction, built-in dashboard |
+| Message broker | Eclipse Mosquitto 2 | MQTT transport, sensor → worker |
+| Worker | Python, `paho-mqtt`, `influxdb-client` | Single instance: stores readings, sends alerts, keeps alert state in InfluxDB |
+| Backend | FastAPI, `influxdb-client`, `scikit-learn` | Stateless REST API, ML prediction, built-in dashboard |
 | Database | InfluxDB 2.7 | Time-series storage of readings |
 | Visualization | Grafana 13 | Live dashboard, auto-provisioned |
 | Alerting | `smtplib` (SMTP) + ntfy.sh | Email + phone push at 80/90/100% clogging |
@@ -112,7 +120,7 @@ names locally, `*.wfm.local` (AWS Cloud Map) and CloudFront on AWS.
 # 1. Copy the env template (defaults are fine for local dev; never commit .env)
 cp .env.example .env
 
-# 2. Start the whole stack: Mosquitto, InfluxDB, backend, virtual sensor, Grafana
+# 2. Start the whole stack: Mosquitto, InfluxDB, worker, backend, virtual sensor, Grafana
 docker compose up -d --build
 
 # 3. Verify
@@ -160,15 +168,17 @@ flowchart LR
         B["backend<br/>1–3 tasks, autoscaled"]
         G["grafana"]
         M["mosquitto"]
+        W["worker<br/>1 task"]
         I["influxdb"]
         S["sensor"]
     end
     ALB -- "/" --> B
     ALB -- "/grafana/*" --> G
-    S --> M --> B --> I
+    S --> M --> W --> I
+    B --> I
     G --> I
     I --- EFS[("EFS<br/>InfluxDB data")]
-    B -- "NAT" --> N["SMTP · ntfy.sh"]
+    W -- "NAT" --> N["SMTP · ntfy.sh"]
 ```
 
 | Layer | What it creates | Lifetime |
@@ -176,7 +186,7 @@ flowchart LR
 | `bootstrap/` | S3 bucket for Terraform state (versioned, encrypted) | permanent, local state |
 | `shared/` | VPC `10.3.0.0/16`, ECR repositories, JumpHost (SSM only, stopped by default) | permanent |
 | `stage-base/` | VPC `10.0.0.0/16` + peering, security groups, EFS, ECS cluster, log groups, secrets in SSM Parameter Store | permanent |
-| `stage-app/` | NAT gateway, IAM task roles, Cloud Map (`wfm.local`), task definitions, 5 ECS services, ALB, CloudFront, backend autoscaling | **on demand** (~0.15 $/h) |
+| `stage-app/` | NAT gateway, IAM task roles, Cloud Map (`wfm.local`), task definitions, 6 ECS services, ALB, CloudFront, backend autoscaling | **on demand** (~0.15 $/h) |
 | `modules/network/` | reusable VPC module (public/private subnets in 2 AZ) | — |
 
 Highlights:
@@ -186,8 +196,10 @@ Highlights:
   ones never touch the Terraform state (ephemeral + write-only).
 - **HTTPS** via CloudFront's default certificate. The ALB accepts only the
   CloudFront prefix list **and** a secret origin header (403 otherwise).
-- **InfluxDB data on EFS**, so it survives `stage-app` destroy/create; the
-  service is stop-then-start on deploy so two instances never share the files.
+- **InfluxDB data on EFS**, so it survives `stage-app` destroy/create.
+- **Single-instance services** (InfluxDB, sensor, worker) deploy
+  stop-then-start, so two copies never run at once (shared files, a second
+  simulated filter, duplicate alerts).
 - **Autoscaling**: the stateless backend scales 1–3 tasks on 50% average CPU.
 
 Deploy (AWS CLI profile and Terraform configured; images built first):
@@ -214,7 +226,7 @@ Locally at `http://localhost:8000` (interactive docs at `/docs`); on AWS at the 
 |---|---|
 | `GET /` | Built-in dashboard (static HTML/CSS/JS, polls the endpoints below) |
 | `GET /health` | Quick liveness check (also used by the ALB) |
-| `GET /latest` | Latest reading received over MQTT (from memory) |
+| `GET /latest` | Most recent reading (last point in InfluxDB) |
 | `GET /history?hours=24` | Reading history from InfluxDB (`hours` 0.05–720, fractional allowed) |
 | `GET /predict?hours=24` | Prediction: time remaining until clogging, plus `R²` |
 | `GET /config` | Public links for the dashboard (Grafana URL for the current environment) |
@@ -245,12 +257,15 @@ sensor readings.
 
 ## 🔔 Alerting
 
-`alerting.py` runs inside the MQTT message handler. On every reading it
+`alerting.py` runs in the worker's MQTT message handler. On every reading it
 computes the clogging percentage (`pressure ÷ threshold`) and fires a
 notification when it crosses **80%, 90%, 100%**:
 
-- each threshold fires **once per filter cycle** (fired thresholds are kept
-  in a set, so a reading every 5 s doesn't produce hundreds of alerts);
+- each threshold fires **once per filter cycle**; the thresholds already
+  notified are also saved in InfluxDB (`alert_event`) and restored when the
+  worker starts, so a restart or redeploy does not repeat them;
+- the worker runs as a **single instance** — alerting lives outside the
+  scalable API, otherwise every API replica would send its own copy;
 - if pressure drops below 50% (filter replaced / sensor restarted) the set
   resets, so the next cycle can alert again;
 - each send (email over SMTP + push via [ntfy.sh](https://ntfy.sh)) is
@@ -276,7 +291,7 @@ system runs normally.
 | `terraform/stage-app/task-definitions.tf` | Same settings for AWS (addresses, sizes, secrets from SSM) |
 
 > Mosquitto allows anonymous access (`allow_anonymous true`) — fine for local
-> development; on AWS it is reachable only from the sensor and backend
+> development; on AWS it is reachable only from the sensor and worker
 > security groups. For a real device fleet, add authentication and TLS.
 
 ---
@@ -292,10 +307,11 @@ water-filter-monitor/
 │   ├── virtual_sensor.py       #   main loop: compute reading, publish to MQTT
 │   ├── filter_model.py         #   mathematical degradation model
 │   └── config.yaml             #   simulation parameters
-├── backend/                    # FastAPI: MQTT subscriber + InfluxDB + ML prediction + alerting
-│   ├── main.py                 #   app entry point, REST endpoints, serves static/
+├── backend/                    # one image, two entry points
+│   ├── main.py                 #   API: REST endpoints + ML prediction, serves static/
+│   ├── worker.py               #   worker: MQTT -> InfluxDB + alerts (single instance)
 │   ├── mqtt_subscriber.py      #   receives readings, writes them, checks alerts
-│   ├── db_writer.py            #   InfluxDB wrapper (write + query)
+│   ├── db_writer.py            #   InfluxDB wrapper (readings + alert state)
 │   ├── ml_model.py             #   clogging-time prediction
 │   ├── alerting.py             #   email + push notifications
 │   └── static/                 #   built-in dashboard (index.html, style.css, app.js)
@@ -327,6 +343,6 @@ missing Windows components: run `wsl --install --no-distribution` as
 Administrator, then restart.
 
 **ECS task keeps restarting on AWS** — check its log group
-(`/ecs/wfm-stage/<service>` in CloudWatch). A sensor/backend task that starts
-before Mosquitto is registered in Cloud Map fails once and is restarted by
-ECS; that is expected.
+(`/ecs/wfm-stage/<service>` in CloudWatch). A sensor task that starts before
+Mosquitto is registered in Cloud Map fails once and is restarted by ECS; that
+is expected.
