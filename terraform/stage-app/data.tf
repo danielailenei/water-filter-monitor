@@ -8,3 +8,14 @@ data "terraform_remote_state" "stage_base" {
     region = "eu-central-1"
   }
 }
+
+# Stratul shared: URL-urile repository-urilor ECR
+data "terraform_remote_state" "shared" {
+  backend = "s3"
+
+  config = {
+    bucket = "wfm-tfstate-121835991412"
+    key    = "shared/terraform.tfstate"
+    region = "eu-central-1"
+  }
+}

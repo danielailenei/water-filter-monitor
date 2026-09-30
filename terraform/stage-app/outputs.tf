@@ -23,3 +23,8 @@ output "service_discovery_arns" {
   description = "ECS services se leaga de aceste ARN-uri (service_registries)"
   value       = { for name, s in aws_service_discovery_service.app : name => s.arn }
 }
+
+output "task_definition_arns" {
+  description = "ARN-ul (cu revizia) fiecarei task definition"
+  value       = { for name, td in aws_ecs_task_definition.app : name => td.arn }
+}
