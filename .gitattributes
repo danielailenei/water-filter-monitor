@@ -1,0 +1,10 @@
+# Same line endings (LF) in the repo and in every checkout, Windows included -
+# the files end up in Linux containers and in Terraform, and the "LF will be
+# replaced by CRLF" warnings on every commit go away.
+* text=auto eol=lf
+
+# Binary files: never touch
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.docx binary
