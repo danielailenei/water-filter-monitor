@@ -1,6 +1,7 @@
 """
-Thin wrapper over the InfluxDB client: writes sensor readings and reads back
-recent history (used by both the API endpoints and the prediction model).
+Thin wrapper over the InfluxDB client: writes sensor readings and alert events,
+and reads them back (history and latest reading for the API, alert state for
+the worker).
 """
 
 import os
@@ -15,6 +16,7 @@ INFLUX_ORG = os.getenv("INFLUX_ORG", "disertatie")
 INFLUX_BUCKET = os.getenv("INFLUX_BUCKET", "water_filter")
 
 MEASUREMENT = "filter_reading"
+ALERT_MEASUREMENT = "alert_event"
 
 
 class DBWriter:
@@ -32,7 +34,32 @@ class DBWriter:
             .field("is_clogged", bool(data.get("is_clogged", False)))
             .time(datetime.now(timezone.utc), WritePrecision.NS)
         )
+        # The sensor's own estimate, shown next to the ML prediction on the dashboard
+        if data.get("days_remaining_model") is not None:
+            point.field("days_remaining_model", float(data["days_remaining_model"]))
         self.write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
+
+    def _query_readings(self, flux_range: str, tail: str = "") -> list[dict]:
+        query = f'''
+        from(bucket: "{INFLUX_BUCKET}")
+          |> range(start: {flux_range})
+          |> filter(fn: (r) => r._measurement == "{MEASUREMENT}")
+          {tail}
+          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+          |> sort(columns: ["_time"])
+        '''
+        rows = []
+        for table in self.query_api.query(query, org=INFLUX_ORG):
+            for record in table.records:
+                rows.append({
+                    "time": record.get_time(),
+                    "pressure_drop_bar": record.values.get("pressure_drop_bar"),
+                    "flow_rate_lmin": record.values.get("flow_rate_lmin"),
+                    "turbidity_ntu": record.values.get("turbidity_ntu"),
+                    "is_clogged": record.values.get("is_clogged"),
+                    "days_remaining_model": record.values.get("days_remaining_model"),
+                })
+        return rows
 
     def get_recent_readings(self, hours: float = 24) -> list[dict]:
         """Return readings from the last `hours` hours, oldest first.
@@ -42,26 +69,42 @@ class DBWriter:
         duration literal.
         """
         minutes = max(1, round(hours * 60))
+        return self._query_readings(f"-{minutes}m")
+
+    def get_latest_reading(self) -> dict | None:
+        """The most recent reading (last 10 minutes), or None if the sensor is silent."""
+        rows = self._query_readings("-10m", tail="|> last()")
+        return rows[-1] if rows else None
+
+    # ---- alert state, shared across restarts of the alerting worker ----
+
+    def write_alert_event(self, kind: str, threshold: int = 0):
+        """kind = "sent" (threshold notified) or "reset" (new filter cycle)."""
+        point = (
+            Point(ALERT_MEASUREMENT)
+            .tag("kind", kind)
+            .field("threshold", int(threshold))
+            .time(datetime.now(timezone.utc), WritePrecision.NS)
+        )
+        self.write_api.write(bucket=INFLUX_BUCKET, org=INFLUX_ORG, record=point)
+
+    def get_fired_thresholds(self, hours: int = 72) -> set[int]:
+        """Thresholds already notified since the last reset (replays the events in order)."""
         query = f'''
         from(bucket: "{INFLUX_BUCKET}")
-          |> range(start: -{minutes}m)
-          |> filter(fn: (r) => r._measurement == "{MEASUREMENT}")
-          |> pivot(rowKey:["_time"], columnKey: ["_field"], valueColumn: "_value")
+          |> range(start: -{hours}h)
+          |> filter(fn: (r) => r._measurement == "{ALERT_MEASUREMENT}" and r._field == "threshold")
+          |> group()
           |> sort(columns: ["_time"])
         '''
-        tables = self.query_api.query(query, org=INFLUX_ORG)
-
-        rows = []
-        for table in tables:
+        fired: set[int] = set()
+        for table in self.query_api.query(query, org=INFLUX_ORG):
             for record in table.records:
-                rows.append({
-                    "time": record.get_time(),
-                    "pressure_drop_bar": record.values.get("pressure_drop_bar"),
-                    "flow_rate_lmin": record.values.get("flow_rate_lmin"),
-                    "turbidity_ntu": record.values.get("turbidity_ntu"),
-                    "is_clogged": record.values.get("is_clogged"),
-                })
-        return rows
+                if record.values.get("kind") == "reset":
+                    fired.clear()
+                else:
+                    fired.add(int(record.get_value()))
+        return fired
 
     def close(self):
         self.client.close()

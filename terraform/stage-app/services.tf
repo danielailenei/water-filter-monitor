@@ -1,6 +1,6 @@
 locals {
   # Servicii cu o singura instanta, oprita inainte de pornirea celei noi (vezi mai jos)
-  singletons = ["influxdb", "sensor"]
+  singletons = ["influxdb", "sensor", "worker"]
 }
 
 resource "aws_ecs_service" "app" {
@@ -26,6 +26,7 @@ resource "aws_ecs_service" "app" {
   #  - influxdb: doua taskuri pe acelasi EFS ar corupe baza de date
   #  - sensor: doi senzori (filtru vechi infundat + filtru nou) publica alternativ
   #    presiuni mari/mici -> alertele se reseteaza si se retrimit la fiecare citire
+  #  - worker: doi workeri ar scrie de doua ori fiecare citire si ar trimite alertele dublu
   deployment_minimum_healthy_percent = contains(local.singletons, each.key) ? 0 : 100
   deployment_maximum_percent         = contains(local.singletons, each.key) ? 100 : 200
   # Redistribuirea taskurilor intre AZ-uri cere maximum > 100%; la un singur task n-are ce muta

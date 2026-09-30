@@ -1,5 +1,5 @@
 locals {
-  app_services = ["backend", "sensor", "mosquitto", "influxdb", "grafana"]
+  app_services = ["backend", "worker", "sensor", "mosquitto", "influxdb", "grafana"]
   jumphost_sg  = local.shared.jumphost_security_group_id
 }
 
@@ -44,10 +44,11 @@ locals {
     "grafana-from-alb"       = { sg = aws_security_group.app["grafana"].id, port = 3000, from = aws_security_group.alb.id }
     "grafana-from-jumphost"  = { sg = aws_security_group.app["grafana"].id, port = 3000, from = local.jumphost_sg }
     "influxdb-from-backend"  = { sg = aws_security_group.app["influxdb"].id, port = 8086, from = aws_security_group.app["backend"].id }
+    "influxdb-from-worker"   = { sg = aws_security_group.app["influxdb"].id, port = 8086, from = aws_security_group.app["worker"].id }
     "influxdb-from-grafana"  = { sg = aws_security_group.app["influxdb"].id, port = 8086, from = aws_security_group.app["grafana"].id }
     "influxdb-from-jumphost" = { sg = aws_security_group.app["influxdb"].id, port = 8086, from = local.jumphost_sg }
     "mosquitto-from-sensor"  = { sg = aws_security_group.app["mosquitto"].id, port = 1883, from = aws_security_group.app["sensor"].id }
-    "mosquitto-from-backend" = { sg = aws_security_group.app["mosquitto"].id, port = 1883, from = aws_security_group.app["backend"].id }
+    "mosquitto-from-worker"  = { sg = aws_security_group.app["mosquitto"].id, port = 1883, from = aws_security_group.app["worker"].id }
     "efs-from-influxdb"      = { sg = aws_security_group.efs.id, port = 2049, from = aws_security_group.app["influxdb"].id }
   }
 }

@@ -43,11 +43,30 @@ locals {
       }
     }
 
+    # API + dashboard: fara MQTT, citeste totul din InfluxDB -> poate scala (autoscaling.tf)
     backend = {
       image  = "${local.ecr["backend"]}:${var.image_tag}"
       cpu    = 256
       memory = 512
       port   = 8000
+      env = {
+        INFLUX_URL    = local.influx_url
+        INFLUX_ORG    = "disertatie"
+        INFLUX_BUCKET = "water_filter"
+        GRAFANA_URL   = local.grafana_url
+      }
+      secrets = {
+        INFLUX_TOKEN = local.secret["influx/token"]
+      }
+    }
+
+    # Worker unic: MQTT -> InfluxDB + alerte. Aceeasi imagine ca backend-ul, alta comanda.
+    worker = {
+      image   = "${local.ecr["backend"]}:${var.image_tag}"
+      command = ["python", "worker.py"]
+      cpu     = 256
+      memory  = 512
+      port    = null
       env = merge(local.mqtt_env, {
         INFLUX_URL         = local.influx_url
         INFLUX_ORG         = "disertatie"
@@ -111,7 +130,7 @@ resource "aws_ecs_task_definition" "app" {
     cpu_architecture        = "ARM64"
   }
 
-  container_definitions = jsonencode([{
+  container_definitions = jsonencode([merge({
     name      = each.key
     image     = each.value.image
     essential = true
@@ -147,7 +166,10 @@ resource "aws_ecs_task_definition" "app" {
     linuxParameters = {
       initProcessEnabled = true
     }
-  }])
+    },
+    # Comanda proprie doar unde e definita (worker); altfel ramane CMD-ul din Dockerfile
+    try(each.value.command, null) == null ? {} : { command = each.value.command }
+  )])
 
   dynamic "volume" {
     for_each = each.key == "influxdb" ? [1] : []

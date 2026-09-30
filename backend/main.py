@@ -1,42 +1,31 @@
 """
-FastAPI app - the backend entry point.
+FastAPI app - the API + dashboard. Stateless: every value comes from InfluxDB,
+so it can run as several replicas behind the load balancer. Readings are
+stored (and alerts sent) by the single worker, see worker.py.
 
-On startup it launches the MQTT subscriber (separate thread) that writes every
-sensor reading to InfluxDB. Exposes:
+Exposes:
     GET /health              - liveness check
-    GET /latest              - last reading received over MQTT
+    GET /latest              - most recent reading
     GET /history?hours=24    - reading history from InfluxDB
     GET /predict?hours=24    - predicted days until the filter clogs
     GET /config              - public links for the dashboard (Grafana URL)
 """
 
-from contextlib import asynccontextmanager
+import os
 
 from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
 
-from alerting import GRAFANA_URL
 from db_writer import DBWriter
-from mqtt_subscriber import MqttSubscriber
 from ml_model import FilterPredictor
+
+# localhost:3000 with docker compose, /grafana/ behind CloudFront on AWS
+GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000").rstrip("/")
 
 db_writer = DBWriter()
 predictor = FilterPredictor()
-latest_reading: dict = {}
-subscriber = MqttSubscriber(db_writer, latest_reading)
 
-
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    subscriber.start()
-    print("[main] backend up, MQTT subscriber running.")
-    yield
-    subscriber.stop()
-    db_writer.close()
-    print("[main] backend stopped.")
-
-
-app = FastAPI(title="Water Filter Monitor API", lifespan=lifespan)
+app = FastAPI(title="Water Filter Monitor API")
 
 
 @app.get("/health")
@@ -46,9 +35,10 @@ def health():
 
 @app.get("/latest")
 def get_latest():
-    if not latest_reading:
-        return {"status": "no_data", "message": "No reading received yet."}
-    return latest_reading
+    reading = db_writer.get_latest_reading()
+    if reading is None:
+        return {"status": "no_data", "message": "No reading in the last 10 minutes."}
+    return reading
 
 
 @app.get("/history")
@@ -65,8 +55,7 @@ def predict(hours: int = Query(24, ge=1, le=24 * 30)):
 
 @app.get("/config")
 def config():
-    # The Grafana address differs per environment (localhost:3000 locally,
-    # /grafana/ behind CloudFront on AWS), so the dashboard asks for it.
+    # The dashboard asks for the Grafana address, which differs per environment
     return {"grafana_url": GRAFANA_URL}
 
 

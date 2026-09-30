@@ -30,9 +30,28 @@ services:
     volumes:
       - influxdb-data:/var/lib/influxdb2
 
+  # API + dashboard (stateless, reads everything from InfluxDB)
   backend:
     build: ./backend
     container_name: backend
+    restart: unless-stopped
+    depends_on:
+      - influxdb
+    environment:
+      - INFLUX_URL=http://influxdb:8086
+      - INFLUX_TOKEN=${INFLUX_TOKEN:-changeme}
+      - INFLUX_ORG=disertatie
+      - INFLUX_BUCKET=water_filter
+      - GRAFANA_URL=http://localhost:3000 # the dashboard's Grafana link
+    ports:
+      - "8000:8000"
+
+  # Single ingest + alerting worker: MQTT -> InfluxDB, email/push alerts.
+  # Same image as the backend, different command.
+  worker:
+    build: ./backend
+    container_name: worker
+    command: ["python", "worker.py"]
     restart: unless-stopped
     depends_on:
       - mosquitto
@@ -46,14 +65,12 @@ services:
       - INFLUX_ORG=disertatie
       - INFLUX_BUCKET=water_filter
       - CLOG_THRESHOLD_BAR=1.5
-      # Links shown on the dashboard and put in the email/push alerts
+      # Links put in the email/push alerts
       - APP_URL=http://localhost:8000
       - GRAFANA_URL=http://localhost:3000
     env_file:
       - path: .env.secrets
         required: false
-    ports:
-      - "8000:8000"
 
   # Same code as `python sensor/virtual_sensor.py`; MQTT_BROKER points at the
   # broker's compose service name.
