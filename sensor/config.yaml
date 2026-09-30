@@ -4,15 +4,14 @@ mqtt:
   topic: home/water/filter
 
 simulation:
-  clogging_rate: 0.0008        # filter degradation constant
+  clogging_rate: 0.0008        # k: filter resistance grows as e^(k*t), t in simulated hours
   base_pressure_bar: 0.2       # pressure drop - new filter
   base_flow_lmin: 15.0         # flow rate - new filter
   base_turbidity_ntu: 0.5      # turbidity - new filter
   clog_threshold_bar: 1.5      # pressure above which the filter is "clogged"
-  max_pressure_bar: 4.0        # physical ceiling - differential pressure cannot exceed
-                               # the mains supply pressure; the filter is fully blocked here
-  max_turbidity_ntu: 10.0      # physical ceiling - a failed filter's output approaches
-                               # the (cloudy) turbidity of the source water
-  time_acceleration: 8000      # simulated time speed-up; at 8000 the 80/90/100%
-                               # alert thresholds arrive ~1 min apart instead of at once
+  supply_pressure_bar: 4.0     # mains pressure - the pressure drop levels off here
+                               # (fully blocked filter); the flow falls to 0
+  max_turbidity_ntu: 10.0      # raw-water turbidity - what a failed filter lets through
+  time_acceleration: 8000      # simulated time speed-up; at 8000 a new filter clogs in
+                               # ~23 min and the 80/90/100% alerts arrive ~1.5 min apart
   publish_interval_seconds: 5

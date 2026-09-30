@@ -14,6 +14,12 @@ data "aws_cloudfront_origin_request_policy" "all_viewer" {
   name = "Managed-AllViewer" # trimite tot, inclusiv Host (necesar pentru CSRF-ul Grafana)
 }
 
+# Antete de securitate adaugate de CloudFront la fiecare raspuns: HSTS (doar HTTPS),
+# X-Content-Type-Options, X-Frame-Options SAMEORIGIN, Referrer-Policy, X-XSS-Protection
+data "aws_cloudfront_response_headers_policy" "security" {
+  name = "Managed-SecurityHeadersPolicy"
+}
+
 resource "aws_cloudfront_distribution" "this" {
   enabled         = true
   is_ipv6_enabled = true
@@ -45,8 +51,9 @@ resource "aws_cloudfront_distribution" "this" {
     cached_methods         = ["GET", "HEAD"]
     compress               = true
 
-    cache_policy_id          = data.aws_cloudfront_cache_policy.disabled.id
-    origin_request_policy_id = data.aws_cloudfront_origin_request_policy.all_viewer.id
+    cache_policy_id            = data.aws_cloudfront_cache_policy.disabled.id
+    origin_request_policy_id   = data.aws_cloudfront_origin_request_policy.all_viewer.id
+    response_headers_policy_id = data.aws_cloudfront_response_headers_policy.security.id
   }
 
   restrictions {

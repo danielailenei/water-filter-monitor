@@ -7,6 +7,12 @@ FROM python:3.11-slim
 # `docker compose logs` in real time, not all at once on flush.
 ENV PYTHONUNBUFFERED=1
 
+# Security updates + unprivileged user, as in backend/Dockerfile
+RUN apt-get update \
+ && apt-get upgrade -y --no-install-recommends \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --uid 10001 --no-create-home --shell /usr/sbin/nologin app
+
 WORKDIR /app
 
 # Copy requirements first so `pip install` is cached across code-only changes.
@@ -15,4 +21,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+USER app
 CMD ["python", "virtual_sensor.py"]

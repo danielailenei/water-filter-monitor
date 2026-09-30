@@ -41,7 +41,7 @@ def main():
         base_flow=sim_cfg["base_flow_lmin"],
         base_turbidity=sim_cfg["base_turbidity_ntu"],
         clog_threshold_bar=sim_cfg["clog_threshold_bar"],
-        max_pressure_bar=sim_cfg.get("max_pressure_bar", 4.0),
+        supply_pressure_bar=sim_cfg.get("supply_pressure_bar", 4.0),
         max_turbidity_ntu=sim_cfg.get("max_turbidity_ntu", 10.0),
     )
     time_acceleration = sim_cfg["time_acceleration"]
