@@ -73,6 +73,14 @@ jobs:
       # ECR scaneaza la push; oprim deploy-ul daca apare o vulnerabilitate CRITICAL
       - name: Vulnerability scan
         run: |
+          # Scanarea apare la cateva secunde dupa push; pana atunci ECR raspunde ScanNotFoundException,
+          # iar waiter-ul se opreste imediat -> asteptam intai sa existe (max ~2 min)
+          for i in $(seq 1 24); do
+            aws ecr describe-image-scan-findings --repository-name "$REPOSITORY" \
+              --image-id imageTag="$TAG" --max-results 1 > /dev/null 2>&1 && break
+            [ "$i" -eq 24 ] && { echo "::error::Scanarea pentru $REPOSITORY:$TAG nu a pornit"; exit 1; }
+            sleep 5
+          done
           aws ecr wait image-scan-complete --repository-name "$REPOSITORY" --image-id imageTag="$TAG"
           counts=$(aws ecr describe-image-scan-findings --repository-name "$REPOSITORY" \
             --image-id imageTag="$TAG" --query 'imageScanFindings.findingSeverityCounts' --output json)
