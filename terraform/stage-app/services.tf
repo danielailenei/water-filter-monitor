@@ -53,6 +53,12 @@ resource "aws_ecs_service" "app" {
   # (valid doar pentru servicii cu load balancer)
   health_check_grace_period_seconds = contains(keys(local.alb_targets), each.key) ? 60 : null
 
+  # desired_count e doar valoarea initiala; apoi il gestioneaza autoscaling-ul (autoscaling.tf).
+  # Fara asta, orice apply ar readuce fortat backend-ul la 1 task.
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
+
   # Internet (ECR, SSM, loguri) inainte de pornire; target group-urile legate de ALB
   depends_on = [
     aws_route.private_to_internet,
