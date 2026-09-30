@@ -5,7 +5,7 @@ datasources:
     uid: influxdb-water-filter
     type: influxdb
     access: proxy
-    url: http://influxdb:8086
+    url: ${INFLUX_URL}
     isDefault: true
     jsonData:
       version: Flux

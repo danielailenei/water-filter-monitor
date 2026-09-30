@@ -81,6 +81,8 @@ services:
       # lets provisioning/datasources/influxdb.yaml substitute ${INFLUX_TOKEN}
       # instead of hardcoding it
       - INFLUX_TOKEN=${INFLUX_TOKEN:-changeme}
+      # same for the datasource URL (influxdb.wfm.local:8086 on ECS)
+      - INFLUX_URL=http://influxdb:8086
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
       - grafana-data:/var/lib/grafana
