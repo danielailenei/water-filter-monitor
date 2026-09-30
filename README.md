@@ -34,6 +34,7 @@ running locally with Docker Compose and on AWS (ECS Fargate) provisioned with Te
 - [How the prediction works](#-how-the-prediction-works)
 - [Alerting](#-alerting)
 - [Configuration](#-configuration)
+- [Security](#-security)
 - [Project structure](#-project-structure)
 - [Troubleshooting](#-troubleshooting)
 
@@ -49,11 +50,14 @@ filter. The system:
 - 📡 collects data over **MQTT**, the standard IoT messaging protocol;
 - 🗄️ stores the full history in a **time-series database** (InfluxDB);
 - 📊 displays it live on a **built-in dashboard** (served by the backend at
-  `/`) and on an auto-provisioned **Grafana dashboard** for deeper analysis;
+  `/`, in Romanian, times in Europe/Bucharest) and on an auto-provisioned
+  **Grafana dashboard** for deeper analysis;
 - 🤖 **predicts**, via a regression model, how long remains before the
-  filter fully clogs;
+  filter fully clogs, next to the simulator's exact value for comparison;
 - 🔔 sends **email + push notifications** (ntfy.sh) at 80%, 90%, and 100% of
-  clogging capacity, with automatic retry on transient network failures.
+  clogging capacity, with automatic retry on transient network failures;
+- ☁️ runs the same containers on **AWS ECS Fargate**, built and deployed by
+  **GitHub Actions**, with the whole infrastructure in **Terraform**.
 
 ---
 
@@ -206,19 +210,33 @@ Highlights:
   simulated filter, duplicate alerts).
 - **Autoscaling**: the stateless backend scales 1–3 tasks on 50% average CPU.
 
-Normally everything runs from GitHub Actions (next section). The same steps by
-hand (AWS CLI profile and Terraform configured):
+**Day to day** everything runs from GitHub Actions (next section): a push to
+`main` builds and deploys, and *Actions → Stage environment → Run workflow*
+creates or destroys `stage-app` (create ~8 min, destroy ~10 min because of
+CloudFront). The app address is printed in the run summary.
+
+**From scratch** (AWS CLI profile `wfm`, Terraform ≥ 1.10), layer by layer —
+each one reads the previous layers' outputs from their state in S3:
 
 ```powershell
 $env:AWS_PROFILE = "wfm"
-powershell -ExecutionPolicy Bypass -File .\scripts\build-push.ps1   # ARM64 images -> ECR, tag = commit SHA -> SSM
-cd terraform\stage-app
-terraform apply                                                      # ~5 min, prints app_url
-terraform destroy                                                    # when done (~10 min, CloudFront)
+cd terraform\bootstrap;  terraform init; terraform apply   # state bucket (its own state stays local)
+cd ..\shared;            terraform init; terraform apply   # VPC, ECR, JumpHost, OIDC roles
+cd ..\stage-base;        terraform init; terraform apply   # VPC + peering, SGs, EFS, ECS cluster, SSM params
+cd ..\..
+powershell -ExecutionPolicy Bypass -File .\scripts\set-stage-secrets.ps1   # .env.secrets -> SSM (SMTP, ntfy)
+powershell -ExecutionPolicy Bypass -File .\scripts\build-push.ps1         # ARM64 images -> ECR, tag = commit SHA -> SSM
+cd terraform\stage-app;  terraform init; terraform apply   # ~8 min, prints app_url
+terraform destroy                                          # when done
 ```
 
 `stage-app` reads the image tag from SSM (`/wfm/stage/image_tag`); pass
 `-var image_tag=<sha>` to run another version.
+
+**Cost:** the permanent layers cost cents per month (stopped JumpHost disk,
+EFS with a few MB, SSM parameters). `stage-app` costs ~0.15 $/h while it
+runs, mostly the NAT gateway, the ALB and Fargate — hence create/destroy on
+demand and the nightly destroy.
 
 Helper scripts: `scripts/build-push.ps1` (build + push to ECR),
 `scripts/set-stage-secrets.ps1` (upload `.env.secrets` to SSM),
@@ -262,6 +280,7 @@ Locally at `http://localhost:8000` (interactive docs at `/docs`); on AWS at the 
 | `GET /latest` | Most recent reading (last point in InfluxDB) |
 | `GET /history?hours=24` | Reading history from InfluxDB (`hours` 0.05–720, fractional allowed) |
 | `GET /predict?hours=24` | Prediction: time remaining until clogging, plus `R²` |
+| `GET /alerts?hours=24` | Recent alert events written by the worker (threshold sent / filter reset) |
 | `GET /config` | Public links for the dashboard (Grafana URL for the current environment) |
 
 The dashboard is plain static files in `backend/static/`, mounted with FastAPI's
@@ -317,6 +336,11 @@ notification when it crosses **80%, 90%, 100%**:
 - alerts link to the dashboard and to Grafana (`APP_URL`, `GRAFANA_URL`);
   tapping the push notification opens the dashboard.
 
+The messages (`alert_templates.py`, in Romanian) are an **HTML email** coloured
+per level (amber / orange / red) with a plain-text fallback, and an ntfy push
+published as JSON with Markdown, rising priority (3 → 5), an icon and action
+buttons. Times are shown in `ALERT_TIMEZONE` (default `Europe/Bucharest`).
+
 Credentials come from `.env.secrets` locally (git-ignored) and from SSM
 Parameter Store on AWS. Without them, alerts are skipped and the rest of the
 system runs normally.
@@ -334,9 +358,37 @@ system runs normally.
 | `grafana/provisioning/` | Datasource + dashboard, baked into the Grafana image |
 | `terraform/stage-app/task-definitions.tf` | Same settings for AWS (addresses, sizes, secrets from SSM) |
 
+Environment variables read by the Python services (defaults in brackets):
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `MQTT_BROKER` / `MQTT_PORT` / `MQTT_TOPIC` | sensor, worker | broker address [`localhost` / `1883` / `home/water/filter`] |
+| `INFLUX_URL` / `INFLUX_TOKEN` / `INFLUX_ORG` / `INFLUX_BUCKET` | worker, backend | InfluxDB connection [`http://localhost:8086` / — / `disertatie` / `water_filter`] |
+| `CLOG_THRESHOLD_BAR` | worker, backend | pressure that counts as clogged; base of the 80/90/100% alerts [`1.5`] |
+| `SUPPLY_PRESSURE_BAR` | backend | mains pressure used by the prediction [`4.0`] — keep in sync with `sensor/config.yaml` |
+| `APP_URL` / `GRAFANA_URL` | worker, backend | public links in alerts and on the dashboard [`http://localhost:8000` / `http://localhost:3000`] |
+| `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `ALERT_EMAIL_TO` | worker | email alerts [`smtp.gmail.com` / `465` / — ] |
+| `NTFY_TOPIC` | worker | ntfy.sh topic for push alerts |
+| `ALERT_TIMEZONE` | worker | time zone of the times in alerts [`Europe/Bucharest`] |
+
 > Mosquitto allows anonymous access (`allow_anonymous true`) — fine for local
 > development; on AWS it is reachable only from the sensor and worker
 > security groups. For a real device fleet, add authentication and TLS.
+
+---
+
+## 🔒 Security
+
+| Area | Measure |
+|---|---|
+| Access to AWS from CI | OIDC, no stored keys; two roles bound to this repo's immutable ID, `main` and the `stage` environment |
+| IAM | least-privilege roles; roles created by the pipeline carry a permissions boundary |
+| Secrets | SSM `SecureString`, injected by ECS at start; generated ones never in the Terraform state; `.env*` git-ignored |
+| Network | tasks in private subnets; security group per service; ALB reachable only from CloudFront + secret header; JumpHost without inbound rules (SSM Session Manager) |
+| Images | ARM64, OS packages upgraded at build, non-root user (uid 10001), ECR scan on push — deploy stops on CRITICAL findings; immutable tags |
+| HTTP | HTTPS only (redirect), CloudFront security headers (HSTS, `nosniff`, `X-Frame-Options`, `Referrer-Policy`), no `Server` header |
+| Supply chain | GitHub Actions pinned by commit SHA; Terraform provider versions locked (`.terraform.lock.hcl`) |
+| State | S3 bucket versioned, encrypted, public access blocked, native locking |
 
 ---
 
@@ -357,7 +409,8 @@ water-filter-monitor/
 │   ├── mqtt_subscriber.py      #   receives readings, writes them, checks alerts
 │   ├── db_writer.py            #   InfluxDB wrapper (readings + alert state)
 │   ├── ml_model.py             #   clogging-time prediction
-│   ├── alerting.py             #   email + push notifications
+│   ├── alerting.py             #   thresholds, persistence, sending with retry
+│   ├── alert_templates.py      #   email (HTML + text) and ntfy message layout
 │   └── static/                 #   built-in dashboard (index.html, style.css, app.js)
 ├── mosquitto/                  # broker config, baked into a custom image
 ├── grafana/                    # pinned Grafana + provisioning, baked into a custom image
@@ -390,4 +443,20 @@ Administrator, then restart.
 **ECS task keeps restarting on AWS** — check its log group
 (`/ecs/wfm-stage/<service>` in CloudWatch). A sensor task that starts before
 Mosquitto is registered in Cloud Map fails once and is restarted by ECS; that
-is expected.
+is expected (the worker can log one `Failed to resolve 'influxdb.wfm.local'`
+for the same reason).
+
+**GitHub Actions: `Not authorized to perform sts:AssumeRoleWithWebIdentity`** —
+the token's `sub` claim does not match the role's trust policy. Check the
+format this repository uses with
+`gh api repos/<owner>/<repo>/actions/oidc/customization/sub` (immutable IDs:
+`repo:owner@<id>/repo@<id>:...`) and set `github_repository` in
+`terraform/shared` accordingly; environment jobs have `:environment:stage`,
+not `:ref:...`.
+
+**The app URL stopped working overnight** — the nightly `stage.yml` run
+destroys `stage-app`; run *Stage environment → create* again. The CloudFront
+address changes on every create.
+
+**Git Bash turns `/wfm/stage/...` into a Windows path** (`ParameterNotFound`) —
+prefix the command with `MSYS_NO_PATHCONV=1`, or use PowerShell.
