@@ -42,3 +42,18 @@ output "jumphost_security_group_id" {
   description = "SG-ul JumpHost-ului; SG-urile din stage vor permite trafic de la el"
   value       = aws_security_group.jumphost.id
 }
+
+output "github_build_role_arn" {
+  description = "Rolul preluat de GitHub Actions pentru build + push in ECR (doar main)"
+  value       = aws_iam_role.github_build.arn
+}
+
+output "github_deploy_role_arn" {
+  description = "Rolul preluat de GitHub Actions pentru terraform pe stage-app (doar environment stage)"
+  value       = aws_iam_role.github_deploy.arn
+}
+
+output "stage_role_boundary_arn" {
+  description = "Permissions boundary obligatoriu pentru rolurile wfm-stage-* din stage-app"
+  value       = aws_iam_policy.stage_role_boundary.arn
+}

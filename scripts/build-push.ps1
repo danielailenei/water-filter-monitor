@@ -1,4 +1,5 @@
 # Construieste imaginile ARM64 si le urca in ECR, cu tag = SHA-ul commit-ului.
+# Varianta manuala a workflow-ului .github/workflows/deploy.yml (build + tag in SSM).
 #
 # Rulare, din radacina repo-ului:
 #   $env:AWS_PROFILE = "wfm"
@@ -46,3 +47,8 @@ foreach ($svc in $Services) {
 }
 
 Write-Host "Gata. Imagini cu tag-ul $Tag in ECR."
+
+# Acelasi pas ca pipeline-ul de deploy: stage-app citeste tag-ul din SSM la urmatorul apply
+aws ssm put-parameter --name /wfm/stage/image_tag --type String --value $Tag --overwrite | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "Nu pot publica tag-ul in SSM" }
+Write-Host "Tag publicat in /wfm/stage/image_tag -> terraform apply in terraform/stage-app il foloseste."

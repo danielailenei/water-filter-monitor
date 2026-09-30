@@ -22,6 +22,9 @@ data "aws_iam_policy_document" "ecs_tasks_assume" {
 resource "aws_iam_role" "execution" {
   name               = "wfm-stage-ecs-execution-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
+
+  # Plafon de permisiuni (shared/github-oidc.tf): pipeline-ul poate crea rolul doar cu el
+  permissions_boundary = local.shared.stage_role_boundary_arn
 }
 
 # Politica gestionata de AWS: pull din ECR + scriere in CloudWatch Logs
@@ -48,6 +51,9 @@ resource "aws_iam_role_policy" "execution_secrets" {
 resource "aws_iam_role" "task" {
   name               = "wfm-stage-ecs-task-role"
   assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
+
+  # Plafon de permisiuni (shared/github-oidc.tf): pipeline-ul poate crea rolul doar cu el
+  permissions_boundary = local.shared.stage_role_boundary_arn
 }
 
 # ECS Exec: shell in container prin canalele SSM (ca docker exec, fara SSH)

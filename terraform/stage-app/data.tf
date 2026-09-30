@@ -9,7 +9,7 @@ data "terraform_remote_state" "stage_base" {
   }
 }
 
-# Stratul shared: URL-urile repository-urilor ECR
+# Stratul shared: URL-urile ECR + permissions boundary pentru rolurile wfm-stage-*
 data "terraform_remote_state" "shared" {
   backend = "s3"
 
@@ -18,4 +18,9 @@ data "terraform_remote_state" "shared" {
     key    = "shared/terraform.tfstate"
     region = "eu-central-1"
   }
+}
+
+# Tag-ul imaginilor de rulat: scris de pipeline-ul de deploy dupa build (stage-base/image-tag.tf)
+data "aws_ssm_parameter" "image_tag" {
+  name = local.base.image_tag_parameter_name
 }

@@ -9,3 +9,9 @@ variable "jumphost_running" {
   type        = bool
   default     = false
 }
+
+variable "github_repository" {
+  description = "Repo-ul GitHub (owner/nume) ale carui workflow-uri pot prelua rolurile OIDC"
+  type        = string
+  default     = "danielailenei/water-filter-monitor"
+}

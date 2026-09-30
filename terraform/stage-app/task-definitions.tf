@@ -1,5 +1,5 @@
 locals {
-  ecr    = data.terraform_remote_state.shared.outputs.ecr_repository_urls
+  ecr    = local.shared.ecr_repository_urls
   secret = local.base.ssm_parameter_arns
 
   # Aceleasi valori ca in docker-compose.yml, cu numele DNS din Cloud Map
@@ -17,7 +17,7 @@ locals {
   # Reteta fiecarui container: un singur tabel, citit de un singur for_each
   services = {
     mosquitto = {
-      image   = "${local.ecr["mosquitto"]}:${var.image_tag}"
+      image   = "${local.ecr["mosquitto"]}:${local.image_tag}"
       cpu     = 256
       memory  = 512
       port    = 1883
@@ -45,7 +45,7 @@ locals {
 
     # API + dashboard: fara MQTT, citeste totul din InfluxDB -> poate scala (autoscaling.tf)
     backend = {
-      image  = "${local.ecr["backend"]}:${var.image_tag}"
+      image  = "${local.ecr["backend"]}:${local.image_tag}"
       cpu    = 256
       memory = 512
       port   = 8000
@@ -65,7 +65,7 @@ locals {
 
     # Worker unic: MQTT -> InfluxDB + alerte. Aceeasi imagine ca backend-ul, alta comanda.
     worker = {
-      image   = "${local.ecr["backend"]}:${var.image_tag}"
+      image   = "${local.ecr["backend"]}:${local.image_tag}"
       command = ["python", "worker.py"]
       cpu     = 256
       memory  = 512
@@ -88,7 +88,7 @@ locals {
     }
 
     sensor = {
-      image   = "${local.ecr["sensor"]}:${var.image_tag}"
+      image   = "${local.ecr["sensor"]}:${local.image_tag}"
       cpu     = 256
       memory  = 512
       port    = null # nu asculta pe niciun port, doar publica
@@ -97,7 +97,7 @@ locals {
     }
 
     grafana = {
-      image  = "${local.ecr["grafana"]}:${var.image_tag}"
+      image  = "${local.ecr["grafana"]}:${local.image_tag}"
       cpu    = 256
       memory = 1024
       port   = 3000
