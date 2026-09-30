@@ -308,8 +308,8 @@ ln( pressure / (P_s − pressure) ) = ln(x0) + k·t
 ```
 
 `ml_model.py` fits a linear regression (`scikit-learn`) on that transform vs
-elapsed seconds, using only the **current filter cycle** (a pressure drop
-> 0.3 bar or a gap > 10 min starts a new one), and solves for the time the
+elapsed seconds, using only the **current filter cycle** (a pressure drop of
+more than 0.3 bar or a gap of more than 10 min starts a new one), and solves for the time the
 pressure reaches the clog threshold (`1.5 bar`). The `/predict` response also
 returns `R²` so the caller can judge the fit; once past the threshold it reports
 `clogged` and since when. Because `k` is learned from the data rather than read
