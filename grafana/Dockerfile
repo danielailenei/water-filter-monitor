@@ -9,6 +9,18 @@ USER root
 RUN apk upgrade --no-cache curl libcurl libssl3 libcrypto3
 USER 472
 
+# Ora Romaniei si format romanesc de data (ca dashboard-ul aplicatiei si email-urile),
+# oricare ar fi fusul orar al containerului (UTC) sau al browserului.
+ENV GF_DATE_FORMATS_DEFAULT_TIMEZONE=Europe/Bucharest \
+    GF_DATE_FORMATS_DEFAULT_WEEK_START=monday \
+    GF_DATE_FORMATS_FULL_DATE="DD.MM.YYYY HH:mm:ss" \
+    GF_DATE_FORMATS_INTERVAL_SECOND="HH:mm:ss" \
+    GF_DATE_FORMATS_INTERVAL_MINUTE="HH:mm" \
+    GF_DATE_FORMATS_INTERVAL_HOUR="DD.MM HH:mm" \
+    GF_DATE_FORMATS_INTERVAL_DAY="DD.MM" \
+    GF_DATE_FORMATS_INTERVAL_MONTH="MM.YYYY" \
+    GF_DATE_FORMATS_INTERVAL_YEAR="YYYY"
+
 # Datasource-ul InfluxDB si dashboard-ul, provizionate la pornire.
 # Token-ul InfluxDB vine din variabila de mediu INFLUX_TOKEN (din SSM), nu din fisier.
 COPY provisioning /etc/grafana/provisioning

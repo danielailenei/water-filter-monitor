@@ -59,8 +59,28 @@ function fmtDuration(secs) {
   return `${(s / 86400).toFixed(1)} zile`;
 }
 
+/* Dates/times: the API sends UTC (ISO 8601); everything is shown in Romanian
+ * time and format, the same as the alert emails, whatever the viewer's clock. */
+const TZ = "Europe/Bucharest";
+const dayKey = (d) => d.toLocaleDateString("ro-RO", { timeZone: TZ });
+const isToday = (d) => dayKey(d) === dayKey(new Date());
+
 const fmtClock = (d, seconds = false) =>
-  d.toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit", second: seconds ? "2-digit" : undefined });
+  d.toLocaleTimeString("ro-RO", {
+    timeZone: TZ, hour: "2-digit", minute: "2-digit", second: seconds ? "2-digit" : undefined,
+  });
+
+const fmtDay = (d) => d.toLocaleDateString("ro-RO", { timeZone: TZ, day: "2-digit", month: "2-digit" });
+
+// full: 30.09.2026, 13:08:26 (tooltips)
+const fmtFull = (d) =>
+  d.toLocaleString("ro-RO", {
+    timeZone: TZ, day: "2-digit", month: "2-digit", year: "numeric",
+    hour: "2-digit", minute: "2-digit", second: "2-digit",
+  });
+
+// only the time today, "29.09, 13:08" on other days
+const fmtWhen = (d, seconds = false) => (isToday(d) ? fmtClock(d, seconds) : `${fmtDay(d)}, ${fmtClock(d, seconds)}`);
 
 const agoSeconds = (d) => (Date.now() - d.getTime()) / 1000;
 
@@ -77,6 +97,7 @@ function refreshStatus() {
   if (!state.lastDataAt) return setConn("stale", "fără date");
   const age = agoSeconds(state.lastDataAt);
   $("updated").textContent = `ultima citire acum ${fmtDuration(age)}`;
+  $("updated").title = fmtFull(state.lastDataAt);
   if (age > STALE_AFTER_S) setConn("stale", "fără date noi");
   else setConn("ok", "live");
 }
@@ -150,6 +171,16 @@ function renderPredict() {
   const sub = $("predict-sub");
   const box = main.parentElement;
 
+  // No reading in the last 10 minutes: the fit would describe stale data
+  if (!r) {
+    main.textContent = "fără date recente";
+    sub.textContent = "senzorul nu a trimis citiri în ultimele 10 minute";
+    box.dataset.level = "";
+    for (const id of ["pred-ml", "pred-model", "pred-r2", "pred-rate"]) $(id).textContent = "–";
+    $("cycle-start").textContent = "–";
+    return;
+  }
+
   if (d.status === "clogged") {
     main.textContent = "înfundat";
     sub.textContent = `pragul a fost atins acum ${fmtDuration(d.seconds_since_clogged + since)}`;
@@ -171,7 +202,7 @@ function renderPredict() {
 
   // regression vs the simulator's analytic estimate
   if (d.status === "ok") $("pred-ml").textContent = `în ${fmtDuration(d.seconds_remaining - since)}`;
-  else if (d.status === "clogged" && d.clogged_at) $("pred-ml").textContent = `prag atins la ${fmtClock(new Date(d.clogged_at))}`;
+  else if (d.status === "clogged" && d.clogged_at) $("pred-ml").textContent = `prag atins la ${fmtWhen(new Date(d.clogged_at))}`;
   else if (d.status === "stable") $("pred-ml").textContent = "fără trend crescător";
   else $("pred-ml").textContent = "prea puține citiri";
 
@@ -196,7 +227,7 @@ function renderPredict() {
     : "–";
 
   $("cycle-start").textContent = d.cycle_started_at
-    ? `${fmtClock(new Date(d.cycle_started_at))} (acum ${fmtDuration(agoSeconds(new Date(d.cycle_started_at)))})`
+    ? `${fmtWhen(new Date(d.cycle_started_at))} (acum ${fmtDuration(agoSeconds(new Date(d.cycle_started_at)))})`
     : "–";
 }
 
@@ -273,12 +304,15 @@ function drawChart() {
     mk("line", { class: "grid", x1: pad.l, x2: W - pad.r, y1: yy, y2: yy });
     mk("text", { class: "axis", x: pad.l - 6, y: yy + 4, "text-anchor": "end" }, v.toFixed(m.digits > 2 ? 2 : 1));
   }
-  // time labels (with seconds on short ranges, otherwise they repeat)
+  // time labels: seconds on short ranges (otherwise they repeat), the date when
+  // the range spans more than one day
   const withSeconds = t1 - t0 < 10 * 60 * 1000;
+  const withDate = dayKey(new Date(t0)) !== dayKey(new Date(t1));
   for (let i = 0; i <= 4; i++) {
-    const t = t0 + ((t1 - t0) * i) / 4;
+    const t = new Date(t0 + ((t1 - t0) * i) / 4);
     const anchor = i === 0 ? "start" : i === 4 ? "end" : "middle";
-    mk("text", { class: "axis", x: x(t), y: H - 6, "text-anchor": anchor }, fmtClock(new Date(t), withSeconds));
+    const label = withDate ? `${fmtDay(t)} ${fmtClock(t)}` : fmtClock(t, withSeconds);
+    mk("text", { class: "axis", x: x(t.getTime()), y: H - 6, "text-anchor": anchor }, label);
   }
 
   const line = pts.map((p, i) => `${i ? "L" : "M"}${x(p.t.getTime()).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
@@ -299,7 +333,7 @@ function drawChart() {
   const first = pts[0].t;
   const last = pts[pts.length - 1].t;
   $("chart-note").textContent =
-    `${total} citiri · ${fmtClock(first)} – ${fmtClock(last)}` +
+    `${total} citiri · ${fmtWhen(first)} – ${fmtWhen(last)}` +
     (hidden > 0 ? ` · ${hidden} citiri din cicluri anterioare ascunse` : "");
 }
 
@@ -326,7 +360,7 @@ function onChartMove(ev) {
   dot.setAttribute("cy", py);
   dot.setAttribute("visibility", "visible");
   const tip = $("tooltip");
-  tip.innerHTML = `<b>${p.v.toFixed(chartGeom.digits)} ${chartGeom.unit}</b>${fmtClock(p.t, true)}`;
+  tip.innerHTML = `<b>${p.v.toFixed(chartGeom.digits)} ${chartGeom.unit}</b>${fmtFull(p.t)}`;
   tip.style.left = `${Math.min(Math.max(px, 60), rect.width - 60)}px`;
   tip.style.top = `${py}px`;
   tip.hidden = false;
@@ -360,7 +394,7 @@ function renderAlerts(events) {
       : ALERT_TEXT[e.threshold] || ["⚠️", `prag ${e.threshold}%`];
     const li = document.createElement("li");
     const t = new Date(e.time);
-    li.innerHTML = `<time title="${t.toLocaleString("ro-RO")}">${fmtClock(t, true)}</time><span>${icon}</span><span></span>`;
+    li.innerHTML = `<time title="${fmtFull(t)}">${fmtWhen(t, true)}</time><span>${icon}</span><span></span>`;
     li.lastChild.textContent = text;
     ul.appendChild(li);
   }
