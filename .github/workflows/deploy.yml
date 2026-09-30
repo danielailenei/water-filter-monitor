@@ -1,0 +1,160 @@
+# Push pe main care atinge codul aplicatiei:
+#   build ARM64 -> ECR (tag = SHA scurt) -> scanare CVE -> tag publicat in SSM
+#   -> daca stage-app ruleaza: terraform apply (task definitions noi) + smoke test.
+# Daca stage-app e oprit, tag-ul ramane in SSM si e folosit la urmatorul "create".
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - backend/**
+      - sensor/**
+      - mosquitto/**
+      - grafana/**
+      - .github/workflows/deploy.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write # token-ul OIDC schimbat pe credentiale AWS temporare
+
+env:
+  AWS_REGION: eu-central-1
+  AWS_ACCOUNT_ID: "121835991412"
+  TF_VERSION: 1.16.4
+
+jobs:
+  build:
+    name: Build ${{ matrix.service }}
+    runs-on: ubuntu-24.04-arm
+    strategy:
+      matrix:
+        service: [backend, sensor, mosquitto, grafana]
+    env:
+      REPOSITORY: wfm/${{ matrix.service }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Image tag
+        run: echo "TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/wfm-github-build
+          aws-region: ${{ env.AWS_REGION }}
+
+      - id: ecr
+        uses: aws-actions/amazon-ecr-login@03f1aad4c6c7ffd436567f42f9384779290529bd # v2.1.7
+
+      # Tag-urile sunt IMMUTABLE: la re-rulare nu reconstruim ce exista deja
+      - name: Tag already in ECR?
+        id: exists
+        run: |
+          found=$(aws ecr list-images --repository-name "$REPOSITORY" \
+            --query "imageIds[?imageTag=='$TAG'].imageTag" --output text)
+          echo "found=${found:+true}" >> "$GITHUB_OUTPUT"
+          [ -n "$found" ] && echo "$REPOSITORY:$TAG exista deja - sar peste build" || true
+
+      - if: steps.exists.outputs.found != 'true'
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - if: steps.exists.outputs.found != 'true'
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: ./${{ matrix.service }}
+          platforms: linux/arm64
+          push: true
+          provenance: false # manifest simplu, fara index "unknown/unknown" in ECR
+          tags: ${{ steps.ecr.outputs.registry }}/${{ env.REPOSITORY }}:${{ env.TAG }}
+          cache-from: type=gha,scope=${{ matrix.service }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.service }}
+
+      # ECR scaneaza la push; oprim deploy-ul daca apare o vulnerabilitate CRITICAL
+      - name: Vulnerability scan
+        run: |
+          aws ecr wait image-scan-complete --repository-name "$REPOSITORY" --image-id imageTag="$TAG"
+          counts=$(aws ecr describe-image-scan-findings --repository-name "$REPOSITORY" \
+            --image-id imageTag="$TAG" --query 'imageScanFindings.findingSeverityCounts' --output json)
+          # null = nicio vulnerabilitate
+          echo "**$REPOSITORY:$TAG** - vulnerabilitati: \`$(echo "$counts" | jq -c '. // {}')\`" >> "$GITHUB_STEP_SUMMARY"
+          critical=$(echo "$counts" | jq '(. // {}).CRITICAL // 0')
+          if [ "$critical" -gt 0 ]; then
+            echo "::error::$critical vulnerabilitati CRITICAL in $REPOSITORY:$TAG"
+            exit 1
+          fi
+
+  deploy:
+    name: Deploy to stage
+    needs: build
+    runs-on: ubuntu-24.04
+    environment:
+      name: stage
+      url: ${{ steps.smoke.outputs.app_url }}
+    # Un singur terraform pe stage-app la un moment dat (comun cu stage.yml)
+    concurrency:
+      group: stage-app
+      cancel-in-progress: false
+    defaults:
+      run:
+        working-directory: terraform/stage-app
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Image tag
+        run: echo "TAG=${GITHUB_SHA::7}" >> "$GITHUB_ENV"
+
+      - uses: aws-actions/configure-aws-credentials@e1253824e5c10ff9df46874f81ed3ec929e19cfd # v6.3.0
+        with:
+          role-to-assume: arn:aws:iam::${{ env.AWS_ACCOUNT_ID }}:role/wfm-github-deploy
+          aws-region: ${{ env.AWS_REGION }}
+
+      - uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: ${{ env.TF_VERSION }}
+          terraform_wrapper: false
+
+      # Sursa unica pentru "ce versiune ruleaza in stage" - citita de terraform (data.tf)
+      - name: Publish image tag
+        run: |
+          aws ssm put-parameter --name /wfm/stage/image_tag --type String \
+            --value "$TAG" --overwrite > /dev/null
+          echo "Tag publicat: \`$TAG\`" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: terraform init
+        run: terraform init -input=false
+
+      - name: Is stage-app running?
+        id: state
+        run: |
+          count=$(terraform state list | wc -l)
+          echo "running=$([ "$count" -gt 0 ] && echo true || echo false)" >> "$GITHUB_OUTPUT"
+          if [ "$count" -eq 0 ]; then
+            echo "stage-app e oprit: imaginile sunt in ECR, tag-ul in SSM; se vor folosi la urmatorul create." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: terraform plan
+        if: steps.state.outputs.running == 'true'
+        run: terraform plan -input=false -out=tfplan
+
+      - name: terraform apply
+        if: steps.state.outputs.running == 'true'
+        run: terraform apply -input=false tfplan
+
+      # ECS inlocuieste taskurile (singleton-urile: stop apoi start); circuit breaker-ul face rollback
+      - name: Wait for services
+        if: steps.state.outputs.running == 'true'
+        run: |
+          aws ecs wait services-stable --cluster wfm-stage \
+            --services mosquitto influxdb worker sensor backend grafana
+
+      - name: Smoke test
+        id: smoke
+        if: steps.state.outputs.running == 'true'
+        run: |
+          url=$(terraform output -raw app_url)
+          echo "app_url=$url" >> "$GITHUB_OUTPUT"
+          curl -fsS --retry 10 --retry-delay 10 --retry-all-errors "$url/health"
+          echo
+          curl -fsS "$url/latest"
+          echo "Deploy OK: $url" >> "$GITHUB_STEP_SUMMARY"
