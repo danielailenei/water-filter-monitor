@@ -23,6 +23,8 @@ from email.message import EmailMessage
 
 import requests
 
+from alert_templates import build_alert
+
 RETRY_ATTEMPTS = 3
 RETRY_DELAY_SECONDS = 3
 
@@ -36,7 +38,9 @@ SMTP_PASSWORD = os.getenv("SMTP_PASSWORD", "").replace(" ", "")
 ALERT_EMAIL_TO = os.getenv("ALERT_EMAIL_TO", "")
 
 NTFY_TOPIC = os.getenv("NTFY_TOPIC", "")
-NTFY_URL = f"https://ntfy.sh/{NTFY_TOPIC}"
+# JSON publishing (topic in the body): UTF-8 titles and markdown work reliably,
+# unlike HTTP headers, which are Latin-1 only.
+NTFY_URL = "https://ntfy.sh/"
 
 # Where the alert links point: localhost for docker compose, the CloudFront
 # address on AWS (set in the ECS task definition).
@@ -93,7 +97,9 @@ class AlertManager:
             self._record("reset")
         self._fired.clear()
 
-    def check_and_notify(self, pressure_drop_bar: float, clog_threshold_bar: float):
+    def check_and_notify(self, pressure_drop_bar: float, clog_threshold_bar: float,
+                         reading: dict | None = None):
+        # reading: the full sensor message, for the extra values shown in the alert
         if clog_threshold_bar <= 0:
             return
         pct = (pressure_drop_bar / clog_threshold_bar) * 100
@@ -105,48 +111,30 @@ class AlertManager:
             if pct >= threshold and threshold not in self._fired:
                 self._fired.add(threshold)
                 self._record("sent", threshold)
-                self._send_alert(threshold, pressure_drop_bar, clog_threshold_bar)
+                self._send_alert(threshold, pressure_drop_bar, clog_threshold_bar, reading)
 
-    def _send_alert(self, threshold: int, pressure_drop_bar: float, clog_threshold_bar: float):
-        # Report the rounded threshold (80/90/100), not the raw pressure/threshold
-        # ratio - the model has no upper bound after clogging, so that ratio can
-        # read e.g. "5548%". Actual values go in the body, clearly labelled.
-        if threshold >= 100:
-            subject = "Water filter CLOGGED - replacement needed"
-            emoji = "\U0001F534"
-            advice = "The filter has reached full clogging. Replace it as soon as possible."
-        elif threshold == 90:
-            subject = "Water filter at 90% capacity"
-            emoji = "\U0001F7E0"
-            advice = "The filter is close to clogging. Have a replacement ready."
-        else:
-            subject = "Water filter at 80% capacity"
-            emoji = "\U0001F7E1"
-            advice = "The filter is clogging noticeably. Plan a replacement soon."
+    def _send_alert(self, threshold: int, pressure_drop_bar: float, clog_threshold_bar: float,
+                    reading: dict | None = None):
+        # The alert names the threshold crossed (80/90/100), not the raw ratio:
+        # pressure keeps rising after clogging, so the ratio can read e.g. "215%".
+        alert = build_alert(threshold, pressure_drop_bar, clog_threshold_bar,
+                            reading, APP_URL, GRAFANA_URL)
+        self._send_email(alert)
+        self._send_push(alert)
 
-        body = (
-            f"{emoji} The water filter has reached {threshold}% of its clogging capacity.\n\n"
-            f"{advice}\n\n"
-            f"Current differential pressure: {pressure_drop_bar:.2f} bar "
-            f"(clog threshold: {clog_threshold_bar:.2f} bar)\n\n"
-            f"Dashboard: {APP_URL}\n"
-            f"Grafana: {GRAFANA_URL}"
-        )
-
-        self._send_email(subject, body)
-        self._send_push(subject, body)
-
-    def _send_email(self, subject: str, body: str):
+    def _send_email(self, alert: dict):
+        subject = alert["subject"]
         if not (SMTP_USER and SMTP_PASSWORD and ALERT_EMAIL_TO):
             print("[alerting] email not configured - skipping.")
             return
 
         def _do_send():
             msg = EmailMessage()
-            msg["Subject"] = f"[Water Filter Monitor] {subject}"
-            msg["From"] = SMTP_USER
+            msg["Subject"] = subject
+            msg["From"] = f"Water Filter Monitor <{SMTP_USER}>"
             msg["To"] = ALERT_EMAIL_TO
-            msg.set_content(body)
+            msg.set_content(alert["text"])                   # plain-text fallback
+            msg.add_alternative(alert["html"], subtype="html")  # what most clients show
             ctx = ssl.create_default_context()
             with smtplib.SMTP_SSL(SMTP_HOST, SMTP_PORT, context=ctx, timeout=10) as server:
                 server.login(SMTP_USER, SMTP_PASSWORD)
@@ -155,7 +143,8 @@ class AlertManager:
         if _with_retry(f"email '{subject}'", _do_send):
             print(f"[alerting] email sent: {subject}")
 
-    def _send_push(self, subject: str, body: str):
+    def _send_push(self, alert: dict):
+        subject = alert["push"]["title"]
         if not NTFY_TOPIC:
             print("[alerting] ntfy not configured - skipping.")
             return
@@ -163,14 +152,16 @@ class AlertManager:
         def _do_send():
             response = requests.post(
                 NTFY_URL,
-                data=body.encode("utf-8"),
-                headers={
-                    "Title": subject.encode("utf-8"),
-                    "Priority": "urgent" if "CLOGGED" in subject else "default",
-                    "Tags": "droplet",
-                    # Tapping the notification opens the dashboard; a button opens Grafana
-                    "Click": APP_URL,
-                    "Actions": f"view, Grafana, {GRAFANA_URL}",
+                json={
+                    "topic": NTFY_TOPIC,
+                    **alert["push"],        # title, message, priority (3-5), tags (icon)
+                    "markdown": True,
+                    # Tapping the notification opens the dashboard; buttons for both
+                    "click": APP_URL,
+                    "actions": [
+                        {"action": "view", "label": "Dashboard", "url": APP_URL},
+                        {"action": "view", "label": "Grafana", "url": GRAFANA_URL},
+                    ],
                 },
                 timeout=5,
             )
