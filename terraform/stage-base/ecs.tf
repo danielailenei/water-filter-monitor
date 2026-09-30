@@ -8,6 +8,8 @@ resource "aws_ecs_cluster" "this" {
   }
 }
 
+# FARGATE_SPOT ramane disponibil in cluster, dar serviciile folosesc FARGATE:
+# imaginile sunt ARM64 (Graviton), iar Fargate Spot nu suporta ARM64
 resource "aws_ecs_cluster_capacity_providers" "this" {
   cluster_name       = aws_ecs_cluster.this.name
   capacity_providers = ["FARGATE", "FARGATE_SPOT"]

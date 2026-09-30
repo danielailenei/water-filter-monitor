@@ -17,7 +17,7 @@ resource "aws_nat_gateway" "this" {
   }
 }
 
-# Ruta lipsa din pasul 3: privat -> internet prin NAT
+# Ruta spre internet a subretelelor private (lipseste intentionat din stage-base)
 resource "aws_route" "private_to_internet" {
   route_table_id         = local.base.private_route_table_id
   destination_cidr_block = "0.0.0.0/0"
