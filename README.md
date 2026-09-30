@@ -238,20 +238,31 @@ The dashboard is plain static files in `backend/static/`, mounted with FastAPI's
 
 ## 🤖 How the prediction works
 
-A filter's differential pressure rises **exponentially** as it clogs, so
-`ln(pressure)` rises **linearly** over time:
+As a filter clogs, its hydraulic resistance grows **exponentially**. The filter
+sits in series with the rest of the plumbing, fed at the mains supply pressure
+`P_s` (4 bar), so with `x = R_filter / R_system`:
 
 ```
-pressure(t) = base · e^(k·t)   ⟹   ln(pressure) = ln(base) + k·t
+x(t) = x0 · e^(k·t)          pressure = P_s · x / (1 + x)          flow ∝ P_s − pressure
 ```
 
-`ml_model.py` fits a linear regression (`scikit-learn`) on
-`(elapsed_seconds, ln(pressure_drop))` over the recent history, reads the
-slope `k` (the degradation rate), and solves for the time at which pressure
-reaches the clog threshold (`1.5 bar` by default). The `/predict` response
-also returns `R²` so the caller can judge the fit. Because `k` is learned
-from the data rather than hardcoded, the same model would work on real
-sensor readings.
+The pressure drop starts at the new-filter value, rises almost exponentially and
+levels off smoothly at `P_s` (a fully blocked filter takes the whole supply
+pressure) while the flow falls to zero. Inverting gives a transform that is
+**linear in time**:
+
+```
+ln( pressure / (P_s − pressure) ) = ln(x0) + k·t
+```
+
+`ml_model.py` fits a linear regression (`scikit-learn`) on that transform vs
+elapsed seconds, using only the **current filter cycle** (a pressure drop
+> 0.3 bar or a gap > 10 min starts a new one), and solves for the time the
+pressure reaches the clog threshold (`1.5 bar`). The `/predict` response also
+returns `R²` so the caller can judge the fit; once past the threshold it reports
+`clogged` and since when. Because `k` is learned from the data rather than read
+from the simulator, the same model would work on real sensor readings. The
+simulator's exact time-to-clog is published alongside, for comparison.
 
 ---
 
@@ -283,7 +294,7 @@ system runs normally.
 
 | Where | Purpose |
 |---|---|
-| `sensor/config.yaml` | Simulation parameters — clogging rate, base values, `clog_threshold_bar`, physical ceilings, `time_acceleration`, publish interval |
+| `sensor/config.yaml` | Simulation parameters — clogging rate, base values, `clog_threshold_bar`, `supply_pressure_bar` (mains pressure), raw-water turbidity, `time_acceleration`, publish interval |
 | `.env` (from `.env.example`) | Local passwords/token read by `docker-compose.yml`; connection values for running the Python code outside Docker |
 | `.env.secrets` (from `.env.secrets.example`) | SMTP + ntfy.sh credentials for alerting — **never committed** |
 | `docker-compose.yml` | Local services, ports, volumes, `APP_URL` / `GRAFANA_URL` |
