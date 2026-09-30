@@ -10,6 +10,10 @@ locals {
   }
   influx_url = "http://influxdb.wfm.local:8086"
 
+  # Adresele publice (CloudFront): link-ul Grafana din dashboard si link-urile din alerte
+  app_url     = "https://${aws_cloudfront_distribution.this.domain_name}"
+  grafana_url = "${local.app_url}/grafana/"
+
   # Reteta fiecarui container: un singur tabel, citit de un singur for_each
   services = {
     mosquitto = {
@@ -49,6 +53,8 @@ locals {
         INFLUX_ORG         = "disertatie"
         INFLUX_BUCKET      = "water_filter"
         CLOG_THRESHOLD_BAR = "1.5"
+        APP_URL            = local.app_url
+        GRAFANA_URL        = local.grafana_url
       })
       secrets = {
         INFLUX_TOKEN   = local.secret["influx/token"]
@@ -78,7 +84,7 @@ locals {
         INFLUX_URL             = local.influx_url
         # Grafana traieste sub /grafana/ pe ALB (regula de rutare din alb.tf)
         GF_SERVER_SERVE_FROM_SUB_PATH = "true"
-        GF_SERVER_ROOT_URL            = "https://${aws_cloudfront_distribution.this.domain_name}/grafana/"
+        GF_SERVER_ROOT_URL            = local.grafana_url
       }
       secrets = {
         GF_SECURITY_ADMIN_PASSWORD = local.secret["grafana/admin_password"]

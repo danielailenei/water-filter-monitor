@@ -230,5 +230,11 @@ $("range-buttons").addEventListener("click", (e) => {
   pollHistory().catch((err) => console.error(err));
 });
 
+/* The Grafana address depends on where the stack runs (localhost:3000 with
+ * docker compose, /grafana/ behind CloudFront on AWS) - the backend knows it. */
+getJSON("/config")
+  .then((cfg) => { $("grafana-link").href = cfg.grafana_url; })
+  .catch((err) => console.error(err));
+
 poll();
 setInterval(poll, POLL_MS);

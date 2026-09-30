@@ -7,6 +7,7 @@ sensor reading to InfluxDB. Exposes:
     GET /latest              - last reading received over MQTT
     GET /history?hours=24    - reading history from InfluxDB
     GET /predict?hours=24    - predicted days until the filter clogs
+    GET /config              - public links for the dashboard (Grafana URL)
 """
 
 from contextlib import asynccontextmanager
@@ -14,6 +15,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI, Query
 from fastapi.staticfiles import StaticFiles
 
+from alerting import GRAFANA_URL
 from db_writer import DBWriter
 from mqtt_subscriber import MqttSubscriber
 from ml_model import FilterPredictor
@@ -61,8 +63,15 @@ def predict(hours: int = Query(24, ge=1, le=24 * 30)):
     return predictor.predict_days_remaining(readings)
 
 
+@app.get("/config")
+def config():
+    # The Grafana address differs per environment (localhost:3000 locally,
+    # /grafana/ behind CloudFront on AWS), so the dashboard asks for it.
+    return {"grafana_url": GRAFANA_URL}
+
+
 # Static dashboard - served on the same origin as the API, so the frontend needs
-# no CORS and there is only one service to expose (e.g. AWS App Runner). Mounted
-# last so it never shadows the API routes above; the directory is relative to the
-# backend working dir (WORKDIR /app in the Dockerfile).
+# no CORS and there is only one service to expose. Mounted last so it never
+# shadows the API routes above; the directory is relative to the backend working
+# dir (WORKDIR /app in the Dockerfile).
 app.mount("/", StaticFiles(directory="static", html=True), name="ui")

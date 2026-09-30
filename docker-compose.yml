@@ -1,13 +1,16 @@
+# Local development stack. The same images (built from these folders) run on
+# AWS ECS Fargate - see terraform/stage-app. Only the addresses differ: compose
+# service names here, *.wfm.local (Cloud Map) and CloudFront on AWS.
 services:
   mosquitto:
-    image: eclipse-mosquitto:2
+    # Official image + config baked in (mosquitto/Dockerfile), as on ECS
+    build: ./mosquitto
     container_name: mosquitto
     restart: unless-stopped
     ports:
       - "1883:1883"
     volumes:
-      - ./mosquitto/config:/mosquitto/config
-      - ./mosquitto/data:/mosquitto/data
+      - mosquitto-data:/mosquitto/data
 
   influxdb:
     image: influxdb:2.7
@@ -43,15 +46,17 @@ services:
       - INFLUX_ORG=disertatie
       - INFLUX_BUCKET=water_filter
       - CLOG_THRESHOLD_BAR=1.5
+      # Links shown on the dashboard and put in the email/push alerts
+      - APP_URL=http://localhost:8000
+      - GRAFANA_URL=http://localhost:3000
     env_file:
       - path: .env.secrets
         required: false
     ports:
       - "8000:8000"
 
-  # Same code as `python sensor/virtual_sensor.py`, but MQTT_BROKER points at
-  # the broker's compose service name so it runs in the stack with no separate
-  # process to babysit on a server.
+  # Same code as `python sensor/virtual_sensor.py`; MQTT_BROKER points at the
+  # broker's compose service name.
   sensor:
     build: ./sensor
     container_name: sensor
@@ -64,13 +69,10 @@ services:
       - MQTT_TOPIC=home/water/filter
 
   grafana:
-    image: grafana/grafana:latest
+    # Pinned version + datasource/dashboard baked in (grafana/Dockerfile), as on ECS
+    build: ./grafana
     container_name: grafana
     restart: unless-stopped
-    # Optional. Left out of the default `up` so the stack fits a 1 GB free-tier
-    # VM (the backend already serves its own dashboard on :8000). Include it
-    # with:  docker compose --profile grafana up -d
-    profiles: ["grafana"]
     depends_on:
       - influxdb
     ports:
@@ -78,15 +80,13 @@ services:
     environment:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=${GRAFANA_ADMIN_PASSWORD:-changeme123}
-      # lets provisioning/datasources/influxdb.yaml substitute ${INFLUX_TOKEN}
-      # instead of hardcoding it
+      # Substituted into provisioning/datasources/influxdb.yaml
       - INFLUX_TOKEN=${INFLUX_TOKEN:-changeme}
-      # same for the datasource URL (influxdb.wfm.local:8086 on ECS)
       - INFLUX_URL=http://influxdb:8086
     volumes:
-      - ./grafana/provisioning:/etc/grafana/provisioning
       - grafana-data:/var/lib/grafana
 
 volumes:
+  mosquitto-data:
   influxdb-data:
   grafana-data:
