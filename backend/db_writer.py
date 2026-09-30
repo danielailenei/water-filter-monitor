@@ -106,5 +106,25 @@ class DBWriter:
                     fired.add(int(record.get_value()))
         return fired
 
+    def get_alert_events(self, hours: int = 24, limit: int = 20) -> list[dict]:
+        """Recent alert events (sent / reset), newest first - shown on the dashboard."""
+        query = f'''
+        from(bucket: "{INFLUX_BUCKET}")
+          |> range(start: -{hours}h)
+          |> filter(fn: (r) => r._measurement == "{ALERT_MEASUREMENT}" and r._field == "threshold")
+          |> group()
+          |> sort(columns: ["_time"], desc: true)
+          |> limit(n: {limit})
+        '''
+        events = []
+        for table in self.query_api.query(query, org=INFLUX_ORG):
+            for record in table.records:
+                events.append({
+                    "time": record.get_time(),
+                    "kind": record.values.get("kind"),
+                    "threshold": int(record.get_value()),
+                })
+        return events
+
     def close(self):
         self.client.close()

@@ -7,13 +7,14 @@ Exposes:
     GET /health              - liveness check
     GET /latest              - most recent reading
     GET /history?hours=24    - reading history from InfluxDB
-    GET /predict?hours=24    - predicted days until the filter clogs
+    GET /predict?hours=24    - predicted time until the filter clogs (current cycle)
+    GET /alerts?hours=24     - recent alert events (sent / filter reset)
     GET /config              - public links for the dashboard (Grafana URL)
 """
 
 import os
 
-from fastapi import FastAPI, Query
+from fastapi import FastAPI, Query, Request
 from fastapi.staticfiles import StaticFiles
 
 from db_writer import DBWriter
@@ -26,6 +27,15 @@ db_writer = DBWriter()
 predictor = FilterPredictor()
 
 app = FastAPI(title="Water Filter Monitor API")
+
+
+@app.middleware("http")
+async def no_cache(request: Request, call_next):
+    # Live data and a dashboard that changes with every deploy: the browser must
+    # revalidate each time, otherwise an old app.js keeps running after a deploy.
+    response = await call_next(request)
+    response.headers["Cache-Control"] = "no-cache"
+    return response
 
 
 @app.get("/health")
@@ -51,6 +61,11 @@ def get_history(hours: float = Query(24, ge=0.05, le=24 * 30)):
 def predict(hours: int = Query(24, ge=1, le=24 * 30)):
     readings = db_writer.get_recent_readings(hours=hours)
     return predictor.predict_days_remaining(readings)
+
+
+@app.get("/alerts")
+def get_alerts(hours: int = Query(24, ge=1, le=24 * 30)):
+    return {"events": db_writer.get_alert_events(hours=hours)}
 
 
 @app.get("/config")

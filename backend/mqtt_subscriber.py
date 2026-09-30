@@ -45,7 +45,7 @@ class MqttSubscriber:
 
         try:
             pressure = float(data.get("pressure_drop_bar", 0))
-            self.alert_manager.check_and_notify(pressure, CLOG_THRESHOLD_BAR)
+            self.alert_manager.check_and_notify(pressure, CLOG_THRESHOLD_BAR, reading=data)
         except Exception as e:
             print(f"[mqtt] alert check failed: {e}")
 
