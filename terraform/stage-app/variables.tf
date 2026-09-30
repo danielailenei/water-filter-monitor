@@ -5,7 +5,7 @@ variable "aws_region" {
 }
 
 variable "image_tag" {
-  description = "Tag-ul imaginilor din ECR = SHA-ul scurt al commit-ului construit cu build-push.ps1"
+  description = "Suprascrie tag-ul imaginilor; implicit (null) se citeste din SSM /wfm/stage/image_tag"
   type        = string
-  default     = "cd3118b"
+  default     = null
 }

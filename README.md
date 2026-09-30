@@ -15,6 +15,8 @@ running locally with Docker Compose and on AWS (ECS Fargate) provisioned with Te
 ![Grafana](https://img.shields.io/badge/Grafana-13-F46800?logo=grafana&logoColor=white)
 ![scikit--learn](https://img.shields.io/badge/scikit--learn-ML%20prediction-F7931E?logo=scikitlearn&logoColor=white)
 ![Terraform](https://img.shields.io/badge/Terraform-AWS-7B42BC?logo=terraform&logoColor=white)
+![CI](https://github.com/danielailenei/water-filter-monitor/actions/workflows/ci.yml/badge.svg)
+![Deploy](https://github.com/danielailenei/water-filter-monitor/actions/workflows/deploy.yml/badge.svg)
 
 </div>
 
@@ -27,6 +29,7 @@ running locally with Docker Compose and on AWS (ECS Fargate) provisioned with Te
 - [Tech stack](#-tech-stack)
 - [Quick start (local)](#-quick-start-local)
 - [Deployment on AWS](#-deployment-on-aws)
+- [CI/CD](#-cicd)
 - [Backend API](#-backend-api)
 - [How the prediction works](#-how-the-prediction-works)
 - [Alerting](#-alerting)
@@ -109,6 +112,7 @@ CloudFront on AWS.
 | Local orchestration | Docker Compose | Start/stop the whole stack with one command |
 | Cloud | AWS ECS Fargate (ARM64), ALB, CloudFront, EFS, Cloud Map, SSM | Production-like deployment |
 | Infrastructure as code | Terraform (S3 remote state) | Layered, create/destroy on demand |
+| CI/CD | GitHub Actions + OIDC | Build, scan, deploy; on-demand stage environment |
 
 ---
 
@@ -184,8 +188,8 @@ flowchart LR
 | Layer | What it creates | Lifetime |
 |---|---|---|
 | `bootstrap/` | S3 bucket for Terraform state (versioned, encrypted) | permanent, local state |
-| `shared/` | VPC `10.3.0.0/16`, ECR repositories, JumpHost (SSM only, stopped by default) | permanent |
-| `stage-base/` | VPC `10.0.0.0/16` + peering, security groups, EFS, ECS cluster, log groups, secrets in SSM Parameter Store | permanent |
+| `shared/` | VPC `10.3.0.0/16`, ECR repositories, JumpHost (SSM only, stopped by default), GitHub OIDC provider + CI/CD roles | permanent |
+| `stage-base/` | VPC `10.0.0.0/16` + peering, security groups, EFS, ECS cluster, log groups, secrets and the deployed image tag in SSM Parameter Store | permanent |
 | `stage-app/` | NAT gateway, IAM task roles, Cloud Map (`wfm.local`), task definitions, 6 ECS services, ALB, CloudFront, backend autoscaling | **on demand** (~0.15 $/h) |
 | `modules/network/` | reusable VPC module (public/private subnets in 2 AZ) | — |
 
@@ -202,19 +206,48 @@ Highlights:
   simulated filter, duplicate alerts).
 - **Autoscaling**: the stateless backend scales 1–3 tasks on 50% average CPU.
 
-Deploy (AWS CLI profile and Terraform configured; images built first):
+Normally everything runs from GitHub Actions (next section). The same steps by
+hand (AWS CLI profile and Terraform configured):
 
 ```powershell
 $env:AWS_PROFILE = "wfm"
-powershell -ExecutionPolicy Bypass -File .\scripts\build-push.ps1   # ARM64 images -> ECR, tag = commit SHA
+powershell -ExecutionPolicy Bypass -File .\scripts\build-push.ps1   # ARM64 images -> ECR, tag = commit SHA -> SSM
 cd terraform\stage-app
 terraform apply                                                      # ~5 min, prints app_url
 terraform destroy                                                    # when done (~10 min, CloudFront)
 ```
 
+`stage-app` reads the image tag from SSM (`/wfm/stage/image_tag`); pass
+`-var image_tag=<sha>` to run another version.
+
 Helper scripts: `scripts/build-push.ps1` (build + push to ECR),
 `scripts/set-stage-secrets.ps1` (upload `.env.secrets` to SSM),
 `scripts/load-test.py` (load generator for the autoscaling test).
+
+---
+
+## 🔄 CI/CD
+
+GitHub Actions authenticates to AWS with **OIDC** — no access keys stored in
+GitHub. Each job gets a signed token; AWS STS exchanges it for 1-hour
+credentials only if the token matches the role's trust policy exactly.
+
+| Workflow | Trigger | What it does |
+|---|---|---|
+| `ci.yml` | pull request to `main` | `terraform fmt` + `validate` (4 layers), Python byte-compile + `pip check`, ARM64 Docker build of the 4 images — no AWS access |
+| `deploy.yml` | push to `main` touching app code | build ARM64 images on a native ARM runner → ECR (tag = short SHA) → fail on CRITICAL CVEs from the ECR scan → publish the tag to SSM → if `stage-app` is running: `terraform apply`, wait for ECS services, smoke test |
+| `stage.yml` | manual (`create` / `destroy`), nightly at 20:00 UTC | on-demand environment: create `stage-app` + smoke test, or destroy it; the nightly run destroys a forgotten stack |
+
+| IAM role | Who can assume it | Can do |
+|---|---|---|
+| `wfm-github-build` | jobs on `main` of this repo | push to the 4 `wfm/*` ECR repositories |
+| `wfm-github-deploy` | jobs in the GitHub environment `stage` (restricted to `main`) | Terraform on `stage-app` only: its state object, NAT/ALB/ECS/Cloud Map/CloudFront, and `wfm-stage-*` IAM roles |
+
+The deploy role can create IAM roles only with the **permissions boundary**
+`wfm-stage-role-boundary` (ECR pull, ECS logs, `/wfm/stage/*` parameters, ECS
+Exec), and cannot remove it — so a pipeline change cannot mint an admin role.
+Both terraform workflows share a concurrency group, so only one run touches the
+`stage-app` state at a time (S3 native locking guards local runs too).
 
 ---
 
@@ -328,6 +361,7 @@ water-filter-monitor/
 │   └── static/                 #   built-in dashboard (index.html, style.css, app.js)
 ├── mosquitto/                  # broker config, baked into a custom image
 ├── grafana/                    # pinned Grafana + provisioning, baked into a custom image
+├── .github/workflows/          # ci.yml, deploy.yml, stage.yml (see "CI/CD")
 ├── scripts/                    # build-push.ps1, set-stage-secrets.ps1, load-test.py
 └── terraform/                  # AWS infrastructure (see "Deployment on AWS")
     ├── bootstrap/  shared/  stage-base/  stage-app/

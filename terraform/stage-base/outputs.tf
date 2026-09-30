@@ -55,3 +55,8 @@ output "efs_access_point_id" {
 output "log_group_names" {
   value = { for name, lg in aws_cloudwatch_log_group.app : name => lg.name }
 }
+
+output "image_tag_parameter_name" {
+  description = "Parametrul SSM din care stage-app citeste tag-ul imaginilor"
+  value       = aws_ssm_parameter.image_tag.name
+}
