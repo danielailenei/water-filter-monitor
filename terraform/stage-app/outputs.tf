@@ -1,3 +1,8 @@
+output "app_url" {
+  description = "Adresa publica a aplicatiei (HTTPS prin CloudFront)"
+  value       = "https://${aws_cloudfront_distribution.this.domain_name}"
+}
+
 output "alb_dns_name" {
   description = "Adresa ALB-ului (accesibila doar prin CloudFront, vezi SG-ul din stage-base)"
   value       = aws_lb.this.dns_name

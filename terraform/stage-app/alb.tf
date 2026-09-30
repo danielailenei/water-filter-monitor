@@ -44,19 +44,29 @@ resource "aws_lb_target_group" "app" {
   }
 }
 
-# ---------- Listener HTTP:80 - implicit spre backend (dashboard + API) ----------
+# ---------- Listener HTTP:80 - implicit 403: fara header-ul secret, nimic nu trece ----------
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.this.arn
   port              = 80
   protocol          = "HTTP"
 
   default_action {
-    type             = "forward"
-    target_group_arn = aws_lb_target_group.app["backend"].arn
+    type = "fixed-response"
+
+    fixed_response {
+      content_type = "text/plain"
+      message_body = "Acces doar prin CloudFront"
+      status_code  = "403"
+    }
   }
 }
 
-# /grafana si /grafana/* -> Grafana (serveste de pe sub-cale, vezi task definition)
+# Header-ul secret pe care il adauga DOAR distributia noastra CloudFront (cloudfront.tf)
+locals {
+  origin_verify_header = "X-Origin-Verify"
+}
+
+# Prioritatea 10: header corect + /grafana si /grafana/* -> Grafana (serveste de pe sub-cale)
 resource "aws_lb_listener_rule" "grafana" {
   listener_arn = aws_lb_listener.http.arn
   priority     = 10
@@ -69,6 +79,31 @@ resource "aws_lb_listener_rule" "grafana" {
   condition {
     path_pattern {
       values = ["/grafana", "/grafana/*"]
+    }
+  }
+
+  condition {
+    http_header {
+      http_header_name = local.origin_verify_header
+      values           = [random_password.origin_verify.result]
+    }
+  }
+}
+
+# Prioritatea 20: header corect, orice alta cale -> backend (dashboard + API)
+resource "aws_lb_listener_rule" "backend" {
+  listener_arn = aws_lb_listener.http.arn
+  priority     = 20
+
+  action {
+    type             = "forward"
+    target_group_arn = aws_lb_target_group.app["backend"].arn
+  }
+
+  condition {
+    http_header {
+      http_header_name = local.origin_verify_header
+      values           = [random_password.origin_verify.result]
     }
   }
 }

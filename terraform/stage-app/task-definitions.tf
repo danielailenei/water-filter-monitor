@@ -78,7 +78,7 @@ locals {
         INFLUX_URL             = local.influx_url
         # Grafana traieste sub /grafana/ pe ALB (regula de rutare din alb.tf)
         GF_SERVER_SERVE_FROM_SUB_PATH = "true"
-        GF_SERVER_ROOT_URL            = "%(protocol)s://%(domain)s/grafana/"
+        GF_SERVER_ROOT_URL            = "https://${aws_cloudfront_distribution.this.domain_name}/grafana/"
       }
       secrets = {
         GF_SECURITY_ADMIN_PASSWORD = local.secret["grafana/admin_password"]

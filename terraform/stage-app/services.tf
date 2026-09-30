@@ -58,5 +58,6 @@ resource "aws_ecs_service" "app" {
     aws_route.private_to_internet,
     aws_lb_listener.http,
     aws_lb_listener_rule.grafana,
+    aws_lb_listener_rule.backend,
   ]
 }
