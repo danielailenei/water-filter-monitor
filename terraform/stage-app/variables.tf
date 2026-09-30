@@ -7,5 +7,5 @@ variable "aws_region" {
 variable "image_tag" {
   description = "Tag-ul imaginilor din ECR = SHA-ul scurt al commit-ului construit cu build-push.ps1"
   type        = string
-  default     = "feaac90"
+  default     = "67024a8"
 }
