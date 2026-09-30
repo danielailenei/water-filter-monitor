@@ -3,78 +3,444 @@
   "uid": "water-filter-monitor",
   "timezone": "Europe/Bucharest",
   "schemaVersion": 39,
-  "version": 1,
+  "version": 2,
   "refresh": "5s",
-  "time": { "from": "now-6h", "to": "now" },
+  "time": {
+    "from": "now-1h",
+    "to": "now"
+  },
   "panels": [
     {
-      "id": 1,
-      "title": "Pressure drop (bar)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 0 },
-      "datasource": { "type": "influxdb", "uid": "influxdb-water-filter" },
+      "id": 5,
+      "title": "Grad de înfundare",
+      "description": "Presiunea față de pragul de înfundare (1,5 bar), limitat la 100%.",
+      "type": "gauge",
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 0,
+        "y": 0
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
       "targets": [
         {
-          "query": "from(bucket: \"water_filter\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"filter_reading\") |> filter(fn: (r) => r._field == \"pressure_drop_bar\")",
+          "query": "from(bucket: \"water_filter\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"pressure_drop_bar\") |> last() |> map(fn: (r) => ({ r with _value: if r._value / 1.5 * 100.0 > 100.0 then 100.0 else r._value / 1.5 * 100.0 }))",
           "refId": "A"
         }
       ],
-      "fieldConfig": {
-        "defaults": { "unit": "bar", "color": { "mode": "palette-classic" } },
-        "overrides": []
-      }
-    },
-    {
-      "id": 2,
-      "title": "Flow rate (L/min)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 0 },
-      "datasource": { "type": "influxdb", "uid": "influxdb-water-filter" },
-      "targets": [
-        {
-          "query": "from(bucket: \"water_filter\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"filter_reading\") |> filter(fn: (r) => r._field == \"flow_rate_lmin\")",
-          "refId": "A"
+      "options": {
+        "showThresholdMarkers": true,
+        "showThresholdLabels": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
         }
-      ],
+      },
       "fieldConfig": {
-        "defaults": { "unit": "Lmin", "color": { "mode": "palette-classic" } },
-        "overrides": []
-      }
-    },
-    {
-      "id": 3,
-      "title": "Turbidity (NTU)",
-      "type": "timeseries",
-      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 8 },
-      "datasource": { "type": "influxdb", "uid": "influxdb-water-filter" },
-      "targets": [
-        {
-          "query": "from(bucket: \"water_filter\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"filter_reading\") |> filter(fn: (r) => r._field == \"turbidity_ntu\")",
-          "refId": "A"
-        }
-      ],
-      "fieldConfig": {
-        "defaults": { "unit": "none", "color": { "mode": "palette-classic" } },
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 0,
+          "displayName": "înfundare",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "red",
+                "value": 90
+              }
+            ]
+          }
+        },
         "overrides": []
       }
     },
     {
       "id": 4,
-      "title": "Filter clogged? (last reading)",
+      "title": "Stare filtru",
       "type": "stat",
-      "gridPos": { "h": 8, "w": 12, "x": 12, "y": 8 },
-      "datasource": { "type": "influxdb", "uid": "influxdb-water-filter" },
+      "gridPos": {
+        "h": 7,
+        "w": 6,
+        "x": 6,
+        "y": 0
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
       "targets": [
         {
-          "query": "from(bucket: \"water_filter\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"filter_reading\") |> filter(fn: (r) => r._field == \"is_clogged\") |> last() |> map(fn: (r) => ({ r with _value: if r._value then 1.0 else 0.0 }))",
+          "query": "from(bucket: \"water_filter\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"is_clogged\") |> last() |> map(fn: (r) => ({ r with _value: if r._value then 1.0 else 0.0 }))",
           "refId": "A"
         }
       ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
       "fieldConfig": {
         "defaults": {
           "mappings": [
-            { "type": "value", "options": { "0": { "text": "OK", "color": "green" }, "1": { "text": "CLOGGED", "color": "red" } } }
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "Funcțional",
+                  "color": "green"
+                },
+                "1": {
+                  "text": "ÎNFUNDAT",
+                  "color": "red"
+                }
+              }
+            }
+          ],
+          "noValue": "fără date"
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Presiune diferențială",
+      "type": "stat",
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 12,
+        "y": 0
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"pressure_drop_bar\") |> last()",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
           ]
+        },
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: bar",
+          "decimals": 2,
+          "displayName": "presiune",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 1.2
+              },
+              {
+                "color": "red",
+                "value": 1.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "Debit",
+      "type": "stat",
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 16,
+        "y": 0
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"flow_rate_lmin\") |> last()",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: L/min",
+          "decimals": 1,
+          "displayName": "debit",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 5
+              },
+              {
+                "color": "green",
+                "value": 10
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 8,
+      "title": "Turbiditate",
+      "type": "stat",
+      "gridPos": {
+        "h": 7,
+        "w": 4,
+        "x": 20,
+        "y": 0
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: -10m) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"turbidity_ntu\") |> last()",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        },
+        "textMode": "value"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: NTU",
+          "decimals": 2,
+          "displayName": "turbiditate",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 3
+              },
+              {
+                "color": "red",
+                "value": 5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 1,
+      "title": "Presiune diferențială (bar)",
+      "description": "Linia roșie punctată: pragul de înfundare. Presiunea se apropie de presiunea rețelei (4 bar) când filtrul se blochează.",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 9,
+        "w": 24,
+        "x": 0,
+        "y": 7
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"pressure_drop_bar\")",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: bar",
+          "decimals": 2,
+          "min": 0,
+          "displayName": "presiune",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#38bdf8"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 12,
+            "thresholdsStyle": {
+              "mode": "dashed"
+            },
+            "axisSoftMax": 1.6
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "transparent",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 1.5
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 2,
+      "title": "Debit (L/min)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"flow_rate_lmin\")",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: L/min",
+          "decimals": 1,
+          "min": 0,
+          "displayName": "debit",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#34d399"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "axisSoftMax": 15
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 3,
+      "title": "Turbiditate (NTU)",
+      "type": "timeseries",
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"turbidity_ntu\")",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: NTU",
+          "decimals": 2,
+          "min": 0,
+          "displayName": "turbiditate",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#fbbf24"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
         },
         "overrides": []
       }

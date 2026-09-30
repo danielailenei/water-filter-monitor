@@ -54,6 +54,9 @@ locals {
         INFLUX_ORG    = "disertatie"
         INFLUX_BUCKET = "water_filter"
         GRAFANA_URL   = local.grafana_url
+        # Modelul de predictie - aceleasi valori ca sensor/config.yaml
+        CLOG_THRESHOLD_BAR  = "1.5"
+        SUPPLY_PRESSURE_BAR = "4.0"
       }
       secrets = {
         INFLUX_TOKEN = local.secret["influx/token"]

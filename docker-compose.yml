@@ -43,6 +43,9 @@ services:
       - INFLUX_ORG=disertatie
       - INFLUX_BUCKET=water_filter
       - GRAFANA_URL=http://localhost:3000 # the dashboard's Grafana link
+      # Prediction model - keep in sync with sensor/config.yaml
+      - CLOG_THRESHOLD_BAR=1.5
+      - SUPPLY_PRESSURE_BAR=4.0
     ports:
       - "8000:8000"
 

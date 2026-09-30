@@ -1,10 +1,21 @@
 """
 Degradation model for a clogging water filter.
 
-As the filter traps particles its pores clog up, so the pressure drop across
-it rises roughly exponentially over time. Flow rate falls as pressure rises,
-and filtered-water turbidity creeps up as retention efficiency drops. All
-parameters come from config.yaml so different clogging rates can be simulated.
+Physics: the filter sits in series with the rest of the plumbing, fed at the
+(constant) mains supply pressure P_s. As particles build up, the filter's
+hydraulic resistance R_f grows exponentially over time; the rest of the system
+keeps a constant resistance R_sys. With x = R_f / R_sys:
+
+    x(t)      = x0 * e^(k*t)                    exponential clogging
+    pressure  = P_s * x / (1 + x)               drop across the filter
+    flow      = P_s / (R_sys + R_f)             -> linear in the pressure drop
+
+so the pressure drop starts at the new-filter value, grows almost
+exponentially, and levels off smoothly at P_s (a fully blocked filter takes
+the whole supply pressure); the flow falls from the new-filter value to zero.
+Filtered-water turbidity rises with the clogging fraction towards the
+turbidity of the raw water. Inverting x(t) gives the exact time to any
+pressure, used as the reference for the backend's prediction.
 """
 
 import math
@@ -15,47 +26,63 @@ class FilterModel:
     def __init__(self, clogging_rate: float = 0.0008, base_pressure: float = 0.2,
                  base_flow: float = 15.0, base_turbidity: float = 0.5,
                  clog_threshold_bar: float = 1.5,
-                 max_pressure_bar: float = 4.0, max_turbidity_ntu: float = 10.0):
-        self.clogging_rate = clogging_rate          # exponential growth constant
-        self.base_pressure = base_pressure          # pressure drop of a new filter (bar)
-        self.base_flow = base_flow                  # max flow of a new filter (L/min)
-        self.base_turbidity = base_turbidity        # baseline filtered-water turbidity (NTU)
+                 supply_pressure_bar: float = 4.0, max_turbidity_ntu: float = 10.0):
+        self.clogging_rate = clogging_rate            # k, per simulated hour
+        self.base_pressure = base_pressure            # pressure drop of a new filter (bar)
+        self.base_flow = base_flow                    # flow of a new filter (L/min)
+        self.base_turbidity = base_turbidity          # filtered turbidity, new filter (NTU)
         self.clog_threshold_bar = clog_threshold_bar  # pressure above which the filter is "clogged"
-        # Physical ceilings - a real filter does not diverge to infinity. The
-        # differential pressure cannot exceed the mains supply pressure, and a
-        # failed filter's output turbidity approaches that of the source water.
-        self.max_pressure_bar = max_pressure_bar
-        self.max_turbidity_ntu = max_turbidity_ntu
+        self.supply_pressure = supply_pressure_bar    # mains pressure: the ceiling of the drop
+        self.max_turbidity_ntu = max_turbidity_ntu    # raw-water turbidity: the ceiling
+        # resistance ratio of a new filter, from its pressure drop
+        self.x0 = base_pressure / (supply_pressure_bar - base_pressure)
+
+    # ---- noiseless physics ----
+
+    def _ratio(self, elapsed_hours: float) -> float:
+        return self.x0 * math.exp(self.clogging_rate * elapsed_hours)
+
+    def true_pressure(self, elapsed_hours: float) -> float:
+        x = self._ratio(elapsed_hours)
+        return self.supply_pressure * x / (1 + x)
+
+    def clogging_fraction(self, pressure_drop: float) -> float:
+        """0 for a new filter, 1 for a fully blocked one."""
+        frac = (pressure_drop - self.base_pressure) / (self.supply_pressure - self.base_pressure)
+        return min(max(frac, 0.0), 1.0)
+
+    # ---- sensor readings (with measurement noise) ----
 
     def pressure_drop(self, elapsed_hours: float) -> float:
-        """Pressure drop (bar) as a function of (accelerated) operating hours."""
-        degradation = self.base_pressure * math.exp(self.clogging_rate * elapsed_hours)
-        noise = random.uniform(-0.02, 0.02)
-        return round(min(degradation + noise, self.max_pressure_bar), 3)
+        """Pressure drop (bar) after `elapsed_hours` of (accelerated) operation."""
+        p = self.true_pressure(elapsed_hours) + random.uniform(-0.02, 0.02)
+        return round(min(max(p, 0.0), self.supply_pressure), 3)
 
     def flow_rate(self, pressure_drop: float) -> float:
-        """Flow rate (L/min) - drops as the differential pressure rises."""
-        flow = self.base_flow / (1 + pressure_drop)
-        noise = random.uniform(-0.3, 0.3)
-        return round(max(flow + noise, 0), 2)
+        """Flow (L/min): the pressure left to push water through falls as the filter blocks."""
+        flow = self.base_flow * (1 - self.clogging_fraction(pressure_drop))
+        return round(max(flow + random.uniform(-0.15, 0.15), 0.0), 2)
 
     def turbidity(self, pressure_drop: float) -> float:
-        """Turbidity (NTU) - rises slowly as the filter degrades."""
-        value = self.base_turbidity + pressure_drop * 2 + random.uniform(-0.1, 0.1)
-        return round(min(max(value, 0), self.max_turbidity_ntu), 2)
+        """Turbidity (NTU): retention drops as the filter clogs, towards the raw water's."""
+        value = self.base_turbidity + (self.max_turbidity_ntu - self.base_turbidity) \
+            * self.clogging_fraction(pressure_drop)
+        value += random.uniform(-0.05, 0.05)
+        return round(min(max(value, 0.0), self.max_turbidity_ntu), 2)
 
     def is_clogged(self, pressure_drop: float) -> bool:
         return pressure_drop >= self.clog_threshold_bar
 
+    # ---- reference prediction ----
+
+    def seconds_to_threshold(self, elapsed_hours: float, time_acceleration: float) -> float:
+        """Exact real-time seconds until the (noiseless) pressure reaches the clog
+        threshold - the ground truth the backend's regression is compared with."""
+        x_thr = self.clog_threshold_bar / (self.supply_pressure - self.clog_threshold_bar)
+        hours_at_threshold = math.log(x_thr / self.x0) / self.clogging_rate
+        sim_hours_left = max(hours_at_threshold - elapsed_hours, 0.0)
+        return sim_hours_left * 3600 / (time_acceleration or 1)
+
     def estimate_days_remaining(self, elapsed_hours: float, time_acceleration: float) -> float:
-        """
-        Analytic ground truth for days left until the pressure reaches the clog
-        threshold, from the inverted exponential. Used as a reference to compare
-        against the backend's regression-based prediction.
-        """
-        if self.base_pressure <= 0:
-            return float("inf")
-        hours_at_threshold = math.log(self.clog_threshold_bar / self.base_pressure) / self.clogging_rate
-        sim_hours_remaining = max(hours_at_threshold - elapsed_hours, 0)
-        real_hours_remaining = sim_hours_remaining / time_acceleration if time_acceleration else sim_hours_remaining
-        return round(real_hours_remaining / 24, 2)
+        # 6 decimals (~0.1 s): 2 decimals would round to 0.01 days = 14.4 minutes
+        return round(self.seconds_to_threshold(elapsed_hours, time_acceleration) / 86400, 6)

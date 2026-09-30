@@ -192,7 +192,10 @@ function renderPredict() {
   } else if (d.status === "ok") {
     const left = d.seconds_remaining - since;
     main.textContent = left > 0 ? `în ${fmtDuration(left)}` : "iminent";
-    sub.textContent = `până la pragul de ${fmt(state.threshold, 1)} bar`;
+    // early in a cycle the rise is still buried in the sensor noise: say so
+    sub.textContent = isNum(d.r_squared) && d.r_squared < 0.8
+      ? `estimare preliminară — trendul abia se conturează`
+      : `până la pragul de ${fmt(state.threshold, 1)} bar`;
     box.dataset.level = left < 300 ? "danger" : left < 1800 ? "warn" : "ok";
   } else if (d.status === "stable") {
     main.textContent = "stabil";
@@ -224,10 +227,11 @@ function renderPredict() {
     $("pred-r2").textContent = "n/a — prea puține puncte";
   }
 
-  // k from ln(p) = k*t + b, per hour -> the time in which the pressure doubles
+  // k from ln(p / (P_s - p)) = k*t + b, per hour: the filter's resistance grows as
+  // e^(k*t), so it doubles every ln(2)/k hours
   const k = d.degradation_rate_per_hour;
   $("pred-rate").textContent = isNum(k) && k > 0
-    ? `presiunea se dublează la ~${fmtDuration((Math.LN2 / k) * 3600)}`
+    ? `se dublează la ~${fmtDuration((Math.LN2 / k) * 3600)}`
     : "–";
 
   $("cycle-start").textContent = d.cycle_started_at
@@ -326,7 +330,8 @@ function drawChart() {
   if (state.metric === "pressure") {
     const ty = y(state.threshold);
     mk("line", { class: "threshold", x1: pad.l, x2: W - pad.r, y1: ty, y2: ty });
-    mk("text", { class: "threshold-label", x: W - pad.r - 4, y: ty - 5, "text-anchor": "end" },
+    // label on the left: the curve starts low there, so it never covers the text
+    mk("text", { class: "threshold-label", x: pad.l + 6, y: ty - 5, "text-anchor": "start" },
        `prag înfundare ${fmt(state.threshold, 1)} bar`);
   }
 
