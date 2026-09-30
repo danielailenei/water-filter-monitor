@@ -1,3 +1,8 @@
+locals {
+  # Servicii cu o singura instanta, oprita inainte de pornirea celei noi (vezi mai jos)
+  singletons = ["influxdb", "sensor"]
+}
+
 resource "aws_ecs_service" "app" {
   for_each = local.services
 
@@ -17,9 +22,14 @@ resource "aws_ecs_service" "app" {
     assign_public_ip = false # iesire doar prin NAT
   }
 
-  # InfluxDB: niciodata doua taskuri pe acelasi EFS -> opreste vechiul, apoi porneste noul
-  deployment_minimum_healthy_percent = each.key == "influxdb" ? 0 : 100
-  deployment_maximum_percent         = each.key == "influxdb" ? 100 : 200
+  # Servicii care trebuie sa ruleze EXACT o instanta -> la deploy opreste vechiul, apoi porneste noul:
+  #  - influxdb: doua taskuri pe acelasi EFS ar corupe baza de date
+  #  - sensor: doi senzori (filtru vechi infundat + filtru nou) publica alternativ
+  #    presiuni mari/mici -> alertele se reseteaza si se retrimit la fiecare citire
+  deployment_minimum_healthy_percent = contains(local.singletons, each.key) ? 0 : 100
+  deployment_maximum_percent         = contains(local.singletons, each.key) ? 100 : 200
+  # Redistribuirea taskurilor intre AZ-uri cere maximum > 100%; la un singur task n-are ce muta
+  availability_zone_rebalancing = contains(local.singletons, each.key) ? "DISABLED" : "ENABLED"
 
   # Deploy esuat -> revine automat la revizia anterioara
   deployment_circuit_breaker {
