@@ -9,7 +9,7 @@ output "vpc_cidr_block" {
 }
 
 output "public_subnet_ids" {
-  description = "Subretelele publice (aici va sta JumpHost-ul)"
+  description = "Subretelele publice (aici sta JumpHost-ul)"
   value       = module.network.public_subnet_ids
 }
 

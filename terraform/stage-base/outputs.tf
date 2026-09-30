@@ -15,7 +15,7 @@ output "private_subnet_ids" {
 }
 
 output "private_route_table_id" {
-  description = "Aici stage-app va adauga ruta 0.0.0.0/0 spre NAT"
+  description = "Tabela privata; stage-app adauga aici ruta 0.0.0.0/0 spre NAT"
   value       = module.network.private_route_table_id
 }
 
