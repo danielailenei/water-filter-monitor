@@ -1,21 +1,38 @@
-/* Water Filter Monitor - minimal dashboard.
- * Polls the FastAPI backend on the same origin every 5 s (the virtual sensor
- * publishes at that rate). No dependencies, no build step. */
+/* Water Filter Monitor - dashboard.
+ * Polls the FastAPI backend on the same origin (no CORS, no dependencies, no
+ * build step): latest reading + prediction every 5 s, history + alerts every 30 s. */
 
 const POLL_MS = 5000;
-const HISTORY_EVERY = 6; // refetch /history once every N polls
-const PREDICT_HOURS = 2; // fixed window fed to /predict (kept clean for the fit)
+const SLOW_EVERY = 6;           // history + alerts once every N polls
+const PREDICT_HOURS = 6;        // window sent to /predict; the model keeps only the current cycle
+const CYCLE_RESET_DROP = 0.3;   // same rules as backend/ml_model.py current_cycle():
+const CYCLE_RESET_GAP_MS = 600 * 1000; //   pressure drop or a gap in the data starts a new cycle
+const STALE_AFTER_S = 30;       // no new reading for this long -> "fără date noi"
+const MAX_CHART_POINTS = 800;   // decimate long ranges so the SVG stays light
 
-let historyHours = 1; // /history window, changed by the range buttons
-
-/* Fresh-filter baseline values - see sensor/config.yaml (simulation.*).
- * CLOG_THRESHOLD_FALLBACK is used until /predict reports the real threshold. */
+/* New-filter values (sensor/config.yaml) - the deltas are shown against these. */
 const BASE = { pressure: 0.2, flow: 15.0, turbidity: 0.5 };
-const CLOG_THRESHOLD_FALLBACK = 1.5;
 
-let tick = 0;
-let clogThreshold = CLOG_THRESHOLD_FALLBACK;
-let lastReading = null;
+const METRICS = {
+  pressure: { key: "pressure_drop_bar", label: "Presiune", unit: "bar", digits: 3 },
+  flow: { key: "flow_rate_lmin", label: "Debit", unit: "L/min", digits: 2 },
+  turbidity: { key: "turbidity_ntu", label: "Turbiditate", unit: "NTU", digits: 2 },
+};
+
+const state = {
+  threshold: 1.5,
+  latest: null,
+  prev: null,
+  predict: null,
+  predictAt: 0,          // when /predict answered (ms), for the live countdown
+  readings: [],          // /history rows
+  metric: "pressure",
+  hours: 1,
+  cycleOnly: true,
+  lastDataAt: null,      // time of the newest reading (Date)
+  tick: 0,
+  error: false,
+};
 
 const $ = (id) => document.getElementById(id);
 
@@ -25,210 +42,415 @@ async function getJSON(path) {
   return res.json();
 }
 
-function setConn(state, text) {
+/* ---------------- formatting ---------------- */
+
+const isNum = (n) => typeof n === "number" && Number.isFinite(n);
+const fmt = (n, digits = 2) => (isNum(n) ? n.toFixed(digits) : "–");
+
+function fmtDuration(secs) {
+  if (!isNum(secs)) return "–";
+  const s = Math.max(0, Math.round(secs));
+  if (s < 90) return `${s} s`;
+  const m = Math.round(s / 60);
+  if (m < 90) return `${m} min`;
+  const h = Math.floor(s / 3600);
+  const mm = Math.round((s % 3600) / 60);
+  if (h < 48) return mm ? `${h} h ${mm} min` : `${h} h`;
+  return `${(s / 86400).toFixed(1)} zile`;
+}
+
+const fmtClock = (d, seconds = false) =>
+  d.toLocaleTimeString("ro-RO", { hour: "2-digit", minute: "2-digit", second: seconds ? "2-digit" : undefined });
+
+const agoSeconds = (d) => (Date.now() - d.getTime()) / 1000;
+
+/* ---------------- status ---------------- */
+
+function setConn(stateName, text) {
   const el = $("conn");
-  el.dataset.state = state;
+  el.dataset.state = stateName;
   el.textContent = text;
 }
 
-function fmt(n, digits = 2) {
-  return n === null || n === undefined || Number.isNaN(Number(n))
-    ? "–"
-    : Number(n).toFixed(digits);
+function refreshStatus() {
+  if (state.error) return setConn("error", "eroare conexiune");
+  if (!state.lastDataAt) return setConn("stale", "fără date");
+  const age = agoSeconds(state.lastDataAt);
+  $("updated").textContent = `ultima citire acum ${fmtDuration(age)}`;
+  if (age > STALE_AFTER_S) setConn("stale", "fără date noi");
+  else setConn("ok", "live");
 }
 
-/* Time-to-clog, in seconds, shown in the largest unit that reads naturally.
- * With the sped-up simulation this is often only minutes. */
-function formatRemaining(secs) {
-  if (secs === null || secs === undefined || Number.isNaN(Number(secs))) return "–";
-  const s = Number(secs);
-  if (s <= 0) return "acum";
-  if (s >= 2 * 86400) return `${(s / 86400).toFixed(1)} zile`;
-  if (s >= 2 * 3600) return `${(s / 3600).toFixed(1)} ore`;
-  if (s >= 90) return `${Math.round(s / 60)} min`;
-  return `${Math.round(s)} s`;
+/* Filter condition from the clogging percentage (pressure / threshold). */
+function level(pct) {
+  if (pct >= 100) return { level: "danger", text: "înfundat — necesită înlocuire" };
+  if (pct >= 90) return { level: "danger", text: "critic" };
+  if (pct >= 80) return { level: "warn", text: "atenție — pregătește un filtru nou" };
+  return { level: "ok", text: "în stare bună" };
 }
 
-function deltaText(current, base) {
-  if (current === null || current === undefined) return "—";
-  const d = current - base;
-  const sign = d >= 0 ? "+" : "−";
-  return `${sign}${Math.abs(d).toFixed(2)} vs nou`;
-}
+/* ---------------- latest reading ---------------- */
 
-function updateGauge(pct) {
+function renderLatest() {
+  const r = state.latest;
+  if (!r) {
+    $("state-chip").textContent = "aștept date de la senzor…";
+    return;
+  }
+  const p = r.pressure_drop_bar;
+  const pct = (p / state.threshold) * 100;
+
+  // gauge
   const CIRC = 2 * Math.PI * 80;
-  const clamped = Math.max(0, Math.min(pct, 100));
   const fg = $("gauge-fg");
-  fg.style.strokeDashoffset = CIRC * (1 - clamped / 100);
-  fg.style.stroke =
-    pct >= 90 ? "var(--danger)" : pct >= 80 ? "var(--warn)" : "var(--ok)";
-  // The simulator's pressure keeps rising past the threshold (no auto-reset),
-  // so pct can exceed 100. A "clogging %" over 100 is meaningless and the ring
-  // is already full - cap the readout at 100 and switch the label to a state.
-  $("clog-pct").textContent = Math.min(Math.round(pct), 100);
-  $("clog-word").textContent = pct >= 100 ? "înfundat" : "înfundare";
+  const lv = level(pct);
+  fg.style.strokeDashoffset = CIRC * (1 - Math.min(Math.max(pct, 0), 100) / 100);
+  fg.style.stroke = `var(--${lv.level})`;
+  $("clog-pct").textContent = Math.round(pct);
+  $("state-chip").textContent = lv.text;
+  $("state-chip").dataset.level = lv.level;
+  $("pressure-vs-threshold").textContent = `${fmt(p, 3)} / ${fmt(state.threshold, 1)} bar`;
+
+  // metrics: value, change since the previous reading, difference to a new filter
+  const rows = [
+    ["m-pressure", "pressure", BASE.pressure],
+    ["m-flow", "flow", BASE.flow],
+    ["m-turb", "turbidity", BASE.turbidity],
+  ];
+  for (const [id, metric, base] of rows) {
+    const m = METRICS[metric];
+    const v = r[m.key];
+    $(id).textContent = fmt(v, m.digits);
+    const d = v - base;
+    $(`${id}-delta`).textContent = isNum(v)
+      ? `${d >= 0 ? "+" : "−"}${Math.abs(d).toFixed(2)} ${m.unit} față de un filtru nou`
+      : " ";
+    const trend = $(`${id}-trend`);
+    const before = state.prev && state.prev[m.key];
+    if (isNum(v) && isNum(before) && Math.abs(v - before) > 0.005) {
+      trend.textContent = v > before ? "▲" : "▼";
+      trend.dataset.dir = v > before ? "up" : "down";
+      trend.title = `${v > before ? "+" : ""}${(v - before).toFixed(3)} față de citirea anterioară`;
+    } else {
+      trend.textContent = "•";
+      trend.dataset.dir = "flat";
+      trend.title = "fără schimbare";
+    }
+  }
 }
 
-async function pollPredict() {
-  const data = await getJSON(`/predict?hours=${PREDICT_HOURS}`);
-  if (typeof data.clog_threshold_bar === "number") {
-    clogThreshold = data.clog_threshold_bar;
-  }
-  if (data.status === "ok") {
-    const secs =
-      typeof data.seconds_remaining === "number"
-        ? data.seconds_remaining
-        : Number(data.days_remaining) * 86400;
-    $("days").textContent =
-      lastReading && lastReading.is_clogged ? "înfundat" : formatRemaining(secs);
-    $("r2-badge").textContent = `R² ${fmt(data.r_squared, 3)}`;
-    $("predict-note").textContent = `${data.points_used} puncte · fereastră ${PREDICT_HOURS} h`;
-    return;
+/* ---------------- prediction ---------------- */
+
+function renderPredict() {
+  const d = state.predict;
+  const r = state.latest;
+  if (!d) return;
+  const since = (Date.now() - state.predictAt) / 1000; // live countdown between polls
+  const main = $("predict-main");
+  const sub = $("predict-sub");
+  const box = main.parentElement;
+
+  if (d.status === "clogged") {
+    main.textContent = "înfundat";
+    sub.textContent = `pragul a fost atins acum ${fmtDuration(d.seconds_since_clogged + since)}`;
+    box.dataset.level = "danger";
+  } else if (d.status === "ok") {
+    const left = d.seconds_remaining - since;
+    main.textContent = left > 0 ? `în ${fmtDuration(left)}` : "iminent";
+    sub.textContent = `până la pragul de ${fmt(state.threshold, 1)} bar`;
+    box.dataset.level = left < 300 ? "danger" : left < 1800 ? "warn" : "ok";
+  } else if (d.status === "stable") {
+    main.textContent = "stabil";
+    sub.textContent = "presiunea nu crește în ciclul curent";
+    box.dataset.level = "ok";
+  } else {
+    main.textContent = "calculez…";
+    sub.textContent = `aștept cel puțin 5 citiri în ciclul curent (acum ${d.cycle_points || 0})`;
+    box.dataset.level = "";
   }
 
-  // Filter already fully clogged: pressure has hit its ceiling and plateaued,
-  // so there is no rising trend left to fit - that is expected, not an error.
-  if (lastReading && lastReading.is_clogged) {
-    $("days").textContent = "înfundat";
-    $("r2-badge").textContent = "—";
-    $("predict-note").textContent = "filtru complet înfundat — presiune la maxim";
-    return;
+  // regression vs the simulator's analytic estimate
+  if (d.status === "ok") $("pred-ml").textContent = `în ${fmtDuration(d.seconds_remaining - since)}`;
+  else if (d.status === "clogged" && d.clogged_at) $("pred-ml").textContent = `prag atins la ${fmtClock(new Date(d.clogged_at))}`;
+  else if (d.status === "stable") $("pred-ml").textContent = "fără trend crescător";
+  else $("pred-ml").textContent = "prea puține citiri";
+
+  const modelDays = r && r.days_remaining_model;
+  if (isNum(modelDays)) {
+    $("pred-model").textContent = modelDays <= 0 ? "prag atins" : `în ${fmtDuration(modelDays * 86400)}`;
+  } else {
+    $("pred-model").textContent = "indisponibil";
   }
 
-  // No usable regression fit: too few points, or the trend is not rising
-  // (typical right after the sensor restarted, when the window still spans an
-  // old cycle). Fall back to the simulator's own estimate and say why.
-  const NOTE = {
-    insufficient_data: "date insuficiente — aștept ~5 citiri",
-    stable:
-      "trend neconcludent — senzorul a fost repornit recent sau rulează discontinuu",
-  };
-  const modelDays = lastReading && lastReading.days_remaining_model;
-  const haveModel = typeof modelDays === "number";
-  $("days").textContent = haveModel ? formatRemaining(modelDays * 86400) : "–";
-  $("r2-badge").textContent = haveModel ? "model senzor" : "R² –";
-  $("predict-note").textContent = NOTE[data.status] || data.message || "—";
+  if (isNum(d.r_squared)) {
+    const q = d.r_squared >= 0.95 ? "excelent" : d.r_squared >= 0.8 ? "bun" : "slab";
+    $("pred-r2").textContent = `${d.r_squared.toFixed(3)} · ${q} (${d.points_used} puncte)`;
+  } else {
+    $("pred-r2").textContent = "n/a — prea puține puncte";
+  }
+
+  // k from ln(p) = k*t + b, per hour -> the time in which the pressure doubles
+  const k = d.degradation_rate_per_hour;
+  $("pred-rate").textContent = isNum(k) && k > 0
+    ? `presiunea se dublează la ~${fmtDuration((Math.LN2 / k) * 3600)}`
+    : "–";
+
+  $("cycle-start").textContent = d.cycle_started_at
+    ? `${fmtClock(new Date(d.cycle_started_at))} (acum ${fmtDuration(agoSeconds(new Date(d.cycle_started_at)))})`
+    : "–";
 }
 
-async function pollLatest() {
-  const data = await getJSON("/latest");
-  if (data.status === "no_data") {
-    lastReading = null;
-    $("clog-note").textContent = "aștept date de la senzor…";
-    return;
+/* ---------------- history chart ---------------- */
+
+function chartSeries() {
+  let rows = state.readings.filter((r) => isNum(r.pressure_drop_bar));
+  let hidden = 0;
+  if (state.cycleOnly) {
+    let start = 0;
+    for (let i = 1; i < rows.length; i++) {
+      const dropped = rows[i - 1].pressure_drop_bar - rows[i].pressure_drop_bar > CYCLE_RESET_DROP;
+      const gap = new Date(rows[i].time) - new Date(rows[i - 1].time) > CYCLE_RESET_GAP_MS;
+      if (dropped || gap) start = i;
+    }
+    hidden = start;
+    rows = rows.slice(start);
   }
-  lastReading = data;
-  const p = data.pressure_drop_bar;
-  $("m-pressure").textContent = fmt(p, 3);
-  $("m-flow").textContent = fmt(data.flow_rate_lmin, 1);
-  $("m-turb").textContent = fmt(data.turbidity_ntu, 2);
-  $("m-pressure-delta").textContent = deltaText(p, BASE.pressure);
-  $("m-flow-delta").textContent = deltaText(data.flow_rate_lmin, BASE.flow);
-  $("m-turb-delta").textContent = deltaText(data.turbidity_ntu, BASE.turbidity);
-
-  updateGauge((p / clogThreshold) * 100);
-  $("clog-note").textContent = data.is_clogged
-    ? "filtru înfundat - necesită înlocuire"
-    : `prag înfundare: ${clogThreshold} bar`;
-}
-
-async function pollHistory() {
-  const data = await getJSON(`/history?hours=${historyHours}`);
-  const all = (data.readings || [])
-    .map((r) => r.pressure_drop_bar)
-    .filter((v) => typeof v === "number");
-  const pts = currentCycle(all);
-  drawSpark(pts);
-  const hidden = all.length - pts.length;
-  $("spark-note").textContent =
-    hidden > 0
-      ? `${pts.length} citiri (${hidden} dintr-un ciclu anterior ascunse)`
-      : `${pts.length} citiri`;
-}
-
-/* A filter cycle ends when the pressure collapses (filter replaced or sensor
- * restarted). Plot only the readings since the last such drop, so the current
- * cycle's gradual rise is not squashed flat by a previous cycle's peak. */
-function currentCycle(values) {
-  let start = 0;
-  for (let i = 1; i < values.length; i++) {
-    if (values[i - 1] - values[i] > 0.3) start = i;
+  const key = METRICS[state.metric].key;
+  let pts = rows.filter((r) => isNum(r[key])).map((r) => ({ t: new Date(r.time), v: r[key] }));
+  if (pts.length > MAX_CHART_POINTS) {
+    const step = pts.length / MAX_CHART_POINTS;
+    pts = Array.from({ length: MAX_CHART_POINTS }, (_, i) => pts[Math.floor(i * step)]).concat(pts[pts.length - 1]);
   }
-  return values.slice(start);
+  return { pts, hidden, total: rows.length };
 }
 
-function drawSpark(values) {
-  const svg = $("spark");
+let chartGeom = null; // kept for the hover handler
+
+function drawChart() {
+  const svg = $("chart");
+  const { pts, hidden, total } = chartSeries();
+  const m = METRICS[state.metric];
   svg.innerHTML = "";
-  if (values.length < 2) {
-    $("spark-note").textContent = "date insuficiente pentru grafic";
+  $("tooltip").hidden = true;
+  chartGeom = null;
+
+  if (pts.length < 2) {
+    $("chart-note").textContent = "date insuficiente pentru grafic în intervalul ales";
     return;
   }
-  const W = 600;
-  const H = 160;
-  const pad = 6;
-  const max = Math.max(...values, clogThreshold);
-  const min = Math.min(...values, 0);
-  const span = max - min || 1;
-  const x = (i) => pad + (i / (values.length - 1)) * (W - 2 * pad);
-  const y = (v) => H - pad - ((v - min) / span) * (H - 2 * pad);
 
-  const line = values
-    .map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`)
-    .join(" ");
-  const area = `${line} L${x(values.length - 1).toFixed(1)},${H - pad} L${x(0).toFixed(1)},${H - pad} Z`;
+  const W = svg.clientWidth || 600;
+  const H = svg.clientHeight || 240;
+  svg.setAttribute("viewBox", `0 0 ${W} ${H}`);
+  const pad = { l: 48, r: 14, t: 12, b: 26 };
+
+  const values = pts.map((p) => p.v);
+  let min = Math.min(...values);
+  let max = Math.max(...values);
+  if (state.metric === "pressure") max = Math.max(max, state.threshold);
+  const span = max - min || 1;
+  min = Math.max(0, min - span * 0.05); // no measured quantity here can be negative
+  max += span * 0.08;
+
+  const t0 = pts[0].t.getTime();
+  const t1 = pts[pts.length - 1].t.getTime();
+  const x = (t) => pad.l + ((t - t0) / (t1 - t0 || 1)) * (W - pad.l - pad.r);
+  const y = (v) => H - pad.b - ((v - min) / (max - min)) * (H - pad.t - pad.b);
 
   const ns = "http://www.w3.org/2000/svg";
-  const mk = (tag, attrs) => {
+  const mk = (tag, attrs, text) => {
     const el = document.createElementNS(ns, tag);
     for (const k in attrs) el.setAttribute(k, attrs[k]);
+    if (text !== undefined) el.textContent = text;
+    svg.appendChild(el);
     return el;
   };
-  svg.appendChild(mk("path", { class: "area", d: area }));
-  svg.appendChild(
-    mk("path", { class: "line", d: line, "vector-effect": "non-scaling-stroke" }),
-  );
-  const ty = y(clogThreshold);
-  if (ty >= 0 && ty <= H) {
-    svg.appendChild(
-      mk("line", {
-        class: "threshold",
-        x1: pad,
-        y1: ty.toFixed(1),
-        x2: W - pad,
-        y2: ty.toFixed(1),
-        "vector-effect": "non-scaling-stroke",
-      }),
-    );
+
+  // horizontal grid + value labels
+  for (let i = 0; i <= 4; i++) {
+    const v = min + ((max - min) * i) / 4;
+    const yy = y(v);
+    mk("line", { class: "grid", x1: pad.l, x2: W - pad.r, y1: yy, y2: yy });
+    mk("text", { class: "axis", x: pad.l - 6, y: yy + 4, "text-anchor": "end" }, v.toFixed(m.digits > 2 ? 2 : 1));
   }
+  // time labels (with seconds on short ranges, otherwise they repeat)
+  const withSeconds = t1 - t0 < 10 * 60 * 1000;
+  for (let i = 0; i <= 4; i++) {
+    const t = t0 + ((t1 - t0) * i) / 4;
+    const anchor = i === 0 ? "start" : i === 4 ? "end" : "middle";
+    mk("text", { class: "axis", x: x(t), y: H - 6, "text-anchor": anchor }, fmtClock(new Date(t), withSeconds));
+  }
+
+  const line = pts.map((p, i) => `${i ? "L" : "M"}${x(p.t.getTime()).toFixed(1)},${y(p.v).toFixed(1)}`).join("");
+  mk("path", { class: "area", d: `${line}L${x(t1).toFixed(1)},${H - pad.b}L${x(t0).toFixed(1)},${H - pad.b}Z` });
+  mk("path", { class: "line", d: line });
+
+  if (state.metric === "pressure") {
+    const ty = y(state.threshold);
+    mk("line", { class: "threshold", x1: pad.l, x2: W - pad.r, y1: ty, y2: ty });
+    mk("text", { class: "threshold-label", x: W - pad.r - 4, y: ty - 5, "text-anchor": "end" },
+       `prag înfundare ${fmt(state.threshold, 1)} bar`);
+  }
+
+  const cursor = mk("line", { class: "cursor", y1: pad.t, y2: H - pad.b, visibility: "hidden" });
+  const dot = mk("circle", { class: "dot", r: 4, visibility: "hidden" });
+  chartGeom = { pts, x, y, cursor, dot, W, pad, unit: m.unit, digits: m.digits, label: m.label };
+
+  const first = pts[0].t;
+  const last = pts[pts.length - 1].t;
+  $("chart-note").textContent =
+    `${total} citiri · ${fmtClock(first)} – ${fmtClock(last)}` +
+    (hidden > 0 ? ` · ${hidden} citiri din cicluri anterioare ascunse` : "");
+}
+
+function onChartMove(ev) {
+  if (!chartGeom) return;
+  const svg = $("chart");
+  const rect = svg.getBoundingClientRect();
+  const mx = ev.clientX - rect.left;
+  const { pts, x, y, cursor, dot } = chartGeom;
+  // nearest point by x (points are sorted by time)
+  let lo = 0;
+  let hi = pts.length - 1;
+  while (hi - lo > 1) {
+    const mid = (lo + hi) >> 1;
+    if (x(pts[mid].t.getTime()) < mx) lo = mid; else hi = mid;
+  }
+  const p = Math.abs(x(pts[lo].t.getTime()) - mx) < Math.abs(x(pts[hi].t.getTime()) - mx) ? pts[lo] : pts[hi];
+  const px = x(p.t.getTime());
+  const py = y(p.v);
+  cursor.setAttribute("x1", px);
+  cursor.setAttribute("x2", px);
+  cursor.setAttribute("visibility", "visible");
+  dot.setAttribute("cx", px);
+  dot.setAttribute("cy", py);
+  dot.setAttribute("visibility", "visible");
+  const tip = $("tooltip");
+  tip.innerHTML = `<b>${p.v.toFixed(chartGeom.digits)} ${chartGeom.unit}</b>${fmtClock(p.t, true)}`;
+  tip.style.left = `${Math.min(Math.max(px, 60), rect.width - 60)}px`;
+  tip.style.top = `${py}px`;
+  tip.hidden = false;
+}
+
+function onChartLeave() {
+  if (!chartGeom) return;
+  chartGeom.cursor.setAttribute("visibility", "hidden");
+  chartGeom.dot.setAttribute("visibility", "hidden");
+  $("tooltip").hidden = true;
+}
+
+/* ---------------- alerts ---------------- */
+
+const ALERT_TEXT = {
+  80: ["⚠️", "80% din pragul de înfundare — email + push trimise"],
+  90: ["🟠", "90% din pragul de înfundare — email + push trimise"],
+  100: ["🔴", "filtru înfundat — email + push trimise"],
+};
+
+function renderAlerts(events) {
+  const ul = $("alerts");
+  ul.innerHTML = "";
+  if (!events.length) {
+    ul.innerHTML = '<li class="muted">nicio alertă în ultimele 24 h</li>';
+    return;
+  }
+  for (const e of events) {
+    const [icon, text] = e.kind === "reset"
+      ? ["🔄", "filtru nou (presiune scăzută) — praguri reactivate"]
+      : ALERT_TEXT[e.threshold] || ["⚠️", `prag ${e.threshold}%`];
+    const li = document.createElement("li");
+    const t = new Date(e.time);
+    li.innerHTML = `<time title="${t.toLocaleString("ro-RO")}">${fmtClock(t, true)}</time><span>${icon}</span><span></span>`;
+    li.lastChild.textContent = text;
+    ul.appendChild(li);
+  }
+}
+
+/* ---------------- polling ---------------- */
+
+async function pollFast() {
+  const [predict, latest] = await Promise.all([
+    getJSON(`/predict?hours=${PREDICT_HOURS}`),
+    getJSON("/latest"),
+  ]);
+  if (isNum(predict.clog_threshold_bar)) state.threshold = predict.clog_threshold_bar;
+  state.predict = predict;
+  state.predictAt = Date.now();
+  if (latest.status === "no_data") {
+    state.latest = null;
+  } else {
+    if (!state.latest || state.latest.time !== latest.time) state.prev = state.latest;
+    state.latest = latest;
+    state.lastDataAt = new Date(latest.time);
+  }
+  renderLatest();
+  renderPredict();
+}
+
+async function pollSlow() {
+  const [history, alerts] = await Promise.all([
+    getJSON(`/history?hours=${state.hours}`),
+    getJSON("/alerts?hours=24"),
+  ]);
+  state.readings = history.readings || [];
+  drawChart();
+  renderAlerts(alerts.events || []);
 }
 
 async function poll() {
   try {
-    await pollPredict(); // resolves clogThreshold before the gauge uses it
-    await pollLatest();
-    if (tick % HISTORY_EVERY === 0) await pollHistory();
-    setConn("ok", "conectat");
-    $("updated").textContent =
-      "actualizat " + new Date().toLocaleTimeString("ro-RO");
+    await pollFast();
+    if (state.tick % SLOW_EVERY === 0) await pollSlow();
+    state.error = false;
   } catch (err) {
-    setConn("error", "eroare conexiune");
+    state.error = true;
     console.error(err);
   } finally {
-    tick++;
+    state.tick++;
+    refreshStatus();
   }
 }
 
-$("range-buttons").addEventListener("click", (e) => {
-  const btn = e.target.closest("button[data-h]");
-  if (!btn) return;
-  historyHours = parseFloat(btn.dataset.h);
-  for (const b of $("range-buttons").children) {
-    b.classList.toggle("active", b === btn);
-  }
-  pollHistory().catch((err) => console.error(err));
+/* ---------------- interaction ---------------- */
+
+function selectMetric(metric) {
+  state.metric = metric;
+  for (const b of $("metric-tabs").children) b.classList.toggle("active", b.dataset.metric === metric);
+  for (const row of document.querySelectorAll(".metric")) row.classList.toggle("active", row.dataset.metric === metric);
+  drawChart();
+}
+
+$("metric-tabs").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-metric]");
+  if (b) selectMetric(b.dataset.metric);
 });
+
+for (const row of document.querySelectorAll(".metric")) {
+  row.addEventListener("click", () => {
+    selectMetric(row.dataset.metric);
+    $("chart").scrollIntoView({ behavior: "smooth", block: "center" });
+  });
+}
+
+$("range-buttons").addEventListener("click", (e) => {
+  const b = e.target.closest("button[data-h]");
+  if (!b) return;
+  state.hours = parseFloat(b.dataset.h);
+  for (const x of $("range-buttons").children) x.classList.toggle("active", x === b);
+  $("chart-note").textContent = "se încarcă…";
+  getJSON(`/history?hours=${state.hours}`)
+    .then((h) => { state.readings = h.readings || []; drawChart(); })
+    .catch((err) => console.error(err));
+});
+
+$("cycle-only").addEventListener("change", (e) => {
+  state.cycleOnly = e.target.checked;
+  drawChart();
+});
+
+$("chart").addEventListener("mousemove", onChartMove);
+$("chart").addEventListener("mouseleave", onChartLeave);
+window.addEventListener("resize", () => drawChart());
 
 /* The Grafana address depends on where the stack runs (localhost:3000 with
  * docker compose, /grafana/ behind CloudFront on AWS) - the backend knows it. */
@@ -236,5 +458,8 @@ getJSON("/config")
   .then((cfg) => { $("grafana-link").href = cfg.grafana_url; })
   .catch((err) => console.error(err));
 
+selectMetric("pressure");
 poll();
 setInterval(poll, POLL_MS);
+// between polls: live countdown and "ultima citire acum X s"
+setInterval(() => { renderPredict(); refreshStatus(); }, 1000);

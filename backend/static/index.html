@@ -9,75 +9,110 @@
 <body>
   <header>
     <h1>💧 Water Filter Monitor</h1>
-    <span id="conn" class="conn" data-state="init">conectare…</span>
+    <div class="header-right">
+      <span id="updated" class="updated">—</span>
+      <span id="conn" class="conn" data-state="init">conectare…</span>
+      <a id="grafana-link" class="btn" href="http://localhost:3000" target="_blank" rel="noopener">Grafana ↗</a>
+    </div>
   </header>
 
   <main>
-    <section class="card gauge-card">
+    <!-- Stare filtru -->
+    <section class="card">
       <h2>Stare filtru</h2>
       <div class="gauge">
-        <svg viewBox="0 0 200 200">
+        <svg viewBox="0 0 200 200" aria-hidden="true">
           <circle class="gauge-bg" cx="100" cy="100" r="80"></circle>
           <circle id="gauge-fg" class="gauge-fg" cx="100" cy="100" r="80"></circle>
         </svg>
         <div class="gauge-label">
-          <span id="clog-pct">–</span><span class="unit">%</span>
-          <small id="clog-word">înfundare</small>
+          <span id="clog-pct" class="gauge-value">–</span>
+          <small>% din prag</small>
         </div>
       </div>
-      <p id="clog-note" class="note">—</p>
+      <p class="state-line"><span id="state-chip" class="chip">se încarcă…</span></p>
+      <dl class="facts">
+        <div><dt>Presiune / prag</dt><dd id="pressure-vs-threshold">–</dd></div>
+        <div><dt>Ciclu început</dt><dd id="cycle-start">–</dd></div>
+      </dl>
     </section>
 
-    <section class="card predict-card">
-      <h2>Predicție</h2>
+    <!-- Predictie -->
+    <section class="card">
+      <h2>Predicție înfundare</h2>
       <div class="big-number">
-        <span id="days">–</span><small>estimat până la înfundare</small>
+        <span id="predict-main">se încarcă…</span>
+        <small id="predict-sub">&nbsp;</small>
       </div>
-      <p class="meta">
-        <span id="r2-badge" class="badge">R² –</span>
-        <span id="predict-note" class="note">—</span>
-      </p>
+      <dl class="facts">
+        <div><dt title="Regresie liniară pe ln(presiune), doar ciclul curent">Regresie ML</dt><dd id="pred-ml">–</dd></div>
+        <div><dt title="Estimarea analitică a simulatorului (referință)">Model senzor</dt><dd id="pred-model">–</dd></div>
+        <div><dt title="Cât de bine explică modelul exponențial datele (1 = perfect)">Calitate fit (R²)</dt><dd id="pred-r2">–</dd></div>
+        <div><dt>Degradare</dt><dd id="pred-rate">–</dd></div>
+      </dl>
     </section>
 
-    <section class="card metrics-card">
+    <!-- Masuratori -->
+    <section class="card">
       <h2>Măsurători curente</h2>
       <div class="metrics">
-        <div class="metric">
-          <span class="metric-name">Presiune</span>
-          <span class="metric-value"><span id="m-pressure">–</span> bar</span>
-          <span id="m-pressure-delta" class="delta">—</span>
+        <div class="metric" data-metric="pressure">
+          <span class="metric-name">Presiune diferențială</span>
+          <span class="metric-value"><span id="m-pressure">–</span> <small>bar</small></span>
+          <span id="m-pressure-trend" class="trend"></span>
+          <span id="m-pressure-delta" class="delta">&nbsp;</span>
         </div>
-        <div class="metric">
+        <div class="metric" data-metric="flow">
           <span class="metric-name">Debit</span>
-          <span class="metric-value"><span id="m-flow">–</span> L/min</span>
-          <span id="m-flow-delta" class="delta">—</span>
+          <span class="metric-value"><span id="m-flow">–</span> <small>L/min</small></span>
+          <span id="m-flow-trend" class="trend"></span>
+          <span id="m-flow-delta" class="delta">&nbsp;</span>
         </div>
-        <div class="metric">
+        <div class="metric" data-metric="turbidity">
           <span class="metric-name">Turbiditate</span>
-          <span class="metric-value"><span id="m-turb">–</span> NTU</span>
-          <span id="m-turb-delta" class="delta">—</span>
+          <span class="metric-value"><span id="m-turb">–</span> <small>NTU</small></span>
+          <span id="m-turb-trend" class="trend"></span>
+          <span id="m-turb-delta" class="delta">&nbsp;</span>
         </div>
       </div>
+      <p class="hint">Click pe o măsurătoare pentru graficul ei.</p>
     </section>
 
-    <section class="card history-card">
+    <!-- Istoric -->
+    <section class="card wide">
       <div class="card-head">
-        <h2>Istoric presiune</h2>
-        <div id="range-buttons" class="range-buttons">
-          <button type="button" data-h="0.25">15m</button>
-          <button type="button" data-h="1" class="active">1h</button>
-          <button type="button" data-h="6">6h</button>
-          <button type="button" data-h="24">24h</button>
+        <div id="metric-tabs" class="tabs" role="tablist">
+          <button type="button" data-metric="pressure" class="active">Presiune</button>
+          <button type="button" data-metric="flow">Debit</button>
+          <button type="button" data-metric="turbidity">Turbiditate</button>
+        </div>
+        <div class="controls">
+          <label class="toggle"><input id="cycle-only" type="checkbox" checked> doar ciclul curent</label>
+          <div id="range-buttons" class="tabs small">
+            <button type="button" data-h="0.25">15m</button>
+            <button type="button" data-h="1" class="active">1h</button>
+            <button type="button" data-h="6">6h</button>
+            <button type="button" data-h="24">24h</button>
+          </div>
         </div>
       </div>
-      <svg id="spark" class="spark" viewBox="0 0 600 160" preserveAspectRatio="none"></svg>
-      <p id="spark-note" class="note">—</p>
+      <div class="chart-wrap">
+        <svg id="chart" class="chart" aria-label="Grafic istoric"></svg>
+        <div id="tooltip" class="tooltip" hidden></div>
+      </div>
+      <p id="chart-note" class="note">se încarcă…</p>
+    </section>
+
+    <!-- Alerte -->
+    <section class="card wide">
+      <h2>Alerte recente <small class="muted">(ultimele 24 h)</small></h2>
+      <ul id="alerts" class="alerts"><li class="muted">se încarcă…</li></ul>
     </section>
   </main>
 
   <footer>
-    <span id="updated">—</span>
-    <a id="grafana-link" href="http://localhost:3000" target="_blank" rel="noopener">Grafana ↗</a>
+    <span>Date live din InfluxDB · actualizare la 5 s</span>
+    <a href="docs" target="_blank" rel="noopener">API ↗</a>
   </footer>
 
   <script src="app.js"></script>
