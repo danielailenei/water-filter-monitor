@@ -26,6 +26,7 @@ resource "aws_service_discovery_service" "app" {
     }
   }
 
-  # ECS raporteaza sanatatea taskurilor; un task nesanatos iese din DNS
-  health_check_custom_config {}
+  # Fara health_check_custom_config: blocul gol nu ajunge in AWS si provider-ul 6
+  # ar cere inlocuirea serviciului la fiecare plan. ECS tot inregistreaza IP-ul
+  # la pornirea taskului si il scoate la oprire.
 }
