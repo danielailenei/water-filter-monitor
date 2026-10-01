@@ -1,6 +1,6 @@
 """Salveaza ca PNG fiecare grafic din dashboard-ul CloudWatch `wfm-stage`, pe un interval dat.
 
-Folosit pentru capturile testului de scalare (lucrare / jurnal). Necesita AWS CLI si profilul `wfm`.
+Folosit pentru capturile testelor de scalare. Necesita AWS CLI si profilul `wfm`.
 
     python scripts/dashboard-snapshot.py 2026-09-30T08:15:00Z 2026-09-30T09:00:00Z docs/capturi/8.3
 """

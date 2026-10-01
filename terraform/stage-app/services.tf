@@ -43,9 +43,9 @@ resource "aws_ecs_service" "app" {
     rollback = true
   }
 
-  enable_execute_command = true # shell in container (task role din 6.2)
+  enable_execute_command = true # shell in container (permisiunile sunt pe task role, iam.tf)
 
-  # Doar mosquitto si influxdb apar in DNS (6.3)
+  # Doar mosquitto si influxdb apar in DNS (service-discovery.tf)
   dynamic "service_registries" {
     for_each = contains(keys(aws_service_discovery_service.app), each.key) ? [1] : []
 

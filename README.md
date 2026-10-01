@@ -38,6 +38,7 @@ running locally with Docker Compose and on AWS (ECS Fargate) provisioned with Te
 - [Security](#-security)
 - [Project structure](#-project-structure)
 - [Troubleshooting](#-troubleshooting)
+- [Development notes](#-development-notes)
 
 ---
 
@@ -466,6 +467,7 @@ water-filter-monitor/
 ├── mosquitto/                  # broker config, baked into a custom image
 ├── grafana/                    # pinned Grafana + provisioning, baked into a custom image
 ├── .github/workflows/          # ci.yml, deploy.yml, stage.yml (see "CI/CD")
+├── diagrams/                   # AWS architecture diagram (draw.io source + PNG)
 ├── scripts/                    # build/push, secrets upload, load + CPU scaling tests, dashboard snapshots
 └── terraform/                  # AWS infrastructure (see "Deployment on AWS")
     ├── bootstrap/  shared/  stage-base/  stage-app/

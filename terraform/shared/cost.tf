@@ -83,7 +83,7 @@ resource "aws_ce_anomaly_subscription" "wfm" {
 }
 
 # Tag-urile din default_tags devin dimensiuni in Cost Explorer / buget doar dupa activare.
-# Se aplica de la activare inainte (backfill separat, vezi jurnal); apar in ~24h.
+# Se aplica de la activare inainte (istoricul se poate completa separat, prin backfill); apar in ~24h.
 resource "aws_ce_cost_allocation_tag" "this" {
   for_each = toset(["Project", "Layer"])
 

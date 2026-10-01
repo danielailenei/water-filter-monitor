@@ -18,8 +18,8 @@ Thumbs.db
 # Office lock files ("~$document.docx")
 ~$*
 
-# Dissertation write-up, diagrams and screenshots - kept local, not in the
-# public app repo
+# Dissertation write-up, journal and screenshots - kept local, not in the
+# public app repo (the published architecture diagram lives in diagrams/)
 docs/
 
 # Real secrets (SMTP password, ntfy topic) - never committed, repo is public.
