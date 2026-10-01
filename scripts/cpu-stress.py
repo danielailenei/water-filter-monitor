@@ -7,7 +7,7 @@ backend, prin ECS Exec, ca scalarea sa depinda numai de CPU-ul serviciului scala
     primeste prin ECS Exec un proces care tine CPU-ul ocupat pana la sfarsitul fazei de stres
     (cu `nice 10`, ca aplicatia sa aiba prioritate -> /health continua sa raspunda);
   - in paralel, o sonda trimite GET /health de 2 ori pe secunda si noteaza orice raspuns != 200
-    (verificam erorile 5xx vazute la scale out / scale in in testul 6.7);
+    (verificam daca apar erori 5xx la scale out / scale in);
   - dupa faza de stres asteapta revenirea la 1 task (scale in ~15 min) sau limita de timp.
 
 Rezultate in <out>: timeline.csv, events.log, summary.txt. Necesita AWS CLI, session-manager-plugin, profilul wfm.
