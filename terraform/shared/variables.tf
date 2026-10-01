@@ -20,3 +20,8 @@ variable "github_repository" {
   type        = string
   default     = "danielailenei@234817575/water-filter-monitor@1351462053"
 }
+
+variable "cost_alert_email" {
+  description = "Adresa care primeste alertele de buget si de anomalii de cost (in terraform.tfvars, ignorat de git)"
+  type        = string
+}
