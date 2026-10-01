@@ -190,9 +190,16 @@ flowchart LR
     W -- "NAT" --> N["SMTP · ntfy.sh"]
 ```
 
+Detailed diagram with the official AWS icons — both VPCs, availability zones,
+subnets, peering, the regional services and the CI/CD path
+([`diagrams/aws-architecture.drawio`](diagrams/aws-architecture.drawio), editable in
+[draw.io](https://app.diagrams.net)):
+
+![AWS architecture](diagrams/aws-architecture.png)
+
 | Layer | What it creates | Lifetime |
 |---|---|---|
-| `bootstrap/` | S3 bucket for Terraform state (versioned, encrypted) | permanent, local state |
+| `bootstrap/` | S3 bucket for Terraform state (versioned, encrypted); its own state is stored in that bucket too | permanent |
 | `shared/` | VPC `10.3.0.0/16`, ECR repositories, JumpHost (SSM only, stopped by default), GitHub OIDC provider + CI/CD roles, monthly budget, cost anomaly alert, cost allocation tags | permanent |
 | `stage-base/` | VPC `10.0.0.0/16` + peering, security groups, EFS, ECS cluster, log groups, CloudWatch dashboard, secrets and the deployed image tag in SSM Parameter Store | permanent |
 | `stage-app/` | NAT gateway, IAM task roles, Cloud Map (`wfm.local`), task definitions, 6 ECS services, ALB, CloudFront, backend autoscaling | **on demand** (~0.15 $/h) |
@@ -221,7 +228,9 @@ each one reads the previous layers' outputs from their state in S3:
 
 ```powershell
 $env:AWS_PROFILE = "wfm"
-cd terraform\bootstrap;  terraform init; terraform apply   # state bucket (its own state stays local)
+cd terraform\bootstrap   # chicken-and-egg: comment out the backend block in versions.tf,
+terraform init; terraform apply   # create the bucket with local state, restore the block,
+terraform init -migrate-state      # then move this layer's state into the bucket
 cd ..\shared                                               # set cost_alert_email first:
 Copy-Item terraform.tfvars.example terraform.tfvars        #   git-ignored, edit the address
 terraform init; terraform apply                            # VPC, ECR, JumpHost, OIDC roles, budget
