@@ -190,8 +190,9 @@ flowchart LR
     W -- "NAT" --> N["SMTP · ntfy.sh"]
 ```
 
-Detailed diagram with the official AWS icons — both VPCs, availability zones,
-subnets, peering, the regional services and the CI/CD path
+Detailed diagram with the official AWS icons — both VPCs with their two availability
+zones and subnet CIDRs, the Docker containers (ECS tasks) in each AZ, peering, how the
+tasks reach ECR, SSM, Cloud Map, CloudWatch and EFS, and the CI/CD path
 ([`diagrams/aws-architecture.drawio`](diagrams/aws-architecture.drawio), editable in
 [draw.io](https://app.diagrams.net)):
 
