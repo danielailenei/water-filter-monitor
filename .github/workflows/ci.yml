@@ -1,10 +1,10 @@
-# Verificari la fiecare pull request spre main - fara credentiale AWS.
+# Verificari la fiecare pull request spre main sau develop - fara credentiale AWS.
 # (PR-urile din fork-uri nu primesc oricum token OIDC; aici nu avem nevoie de el.)
 name: CI
 
 on:
   pull_request:
-    branches: [main]
+    branches: [main, develop]
   workflow_dispatch:
 
 permissions:

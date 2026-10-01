@@ -38,6 +38,7 @@ running locally with Docker Compose and on AWS (ECS Fargate) provisioned with Te
 - [Security](#-security)
 - [Project structure](#-project-structure)
 - [Troubleshooting](#-troubleshooting)
+- [Branching](#-branching)
 - [Development notes](#-development-notes)
 
 ---
@@ -524,6 +525,19 @@ force-unlock <ID>`. Write Terraform output to a file before filtering it.
 seconds after the task is `RUNNING`; retry. `cpu-stress.py` retries on its own.
 From PowerShell 5.1, pass commands with inner quotes through Python
 `subprocess` — PowerShell strips them when calling native programs.
+
+---
+
+## 🌿 Branching
+
+| Branch | Role |
+|---|---|
+| `main` | Stable version. Only `main` deploys (`deploy.yml`), and the GitHub environment `stage` accepts only `main`. |
+| `develop` | Integration branch for upgrades: changes are collected and tested here before a release to `main`. |
+| `feature/*`, `fix/*` | Short-lived, one change each; deleted automatically after merge. |
+
+Flow: `feature/x` → pull request into `develop` (CI runs) → when ready, pull
+request `develop` → `main` (CI runs) → merge → `deploy.yml` builds and deploys.
 
 ---
 
