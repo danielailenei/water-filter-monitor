@@ -1,4 +1,4 @@
-# Dashboard CloudWatch pentru stage (Pasul 8.2) — un singur ecran pentru testul de scalare si demo.
+# Dashboard CloudWatch pentru stage — un singur ecran pentru testul de scalare si demo.
 #
 # Sta in stage-base (permanent, primele 3 dashboard-uri din cont sunt gratuite), nu in stage-app:
 #  - rolul de deploy din GitHub Actions nu are nevoie de cloudwatch:PutDashboard;

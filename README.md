@@ -30,6 +30,7 @@ running locally with Docker Compose and on AWS (ECS Fargate) provisioned with Te
 - [Quick start (local)](#-quick-start-local)
 - [Deployment on AWS](#-deployment-on-aws)
 - [CI/CD](#-cicd)
+- [Monitoring and cost](#-monitoring-and-cost)
 - [Backend API](#-backend-api)
 - [How the prediction works](#-how-the-prediction-works)
 - [Alerting](#-alerting)
@@ -192,8 +193,8 @@ flowchart LR
 | Layer | What it creates | Lifetime |
 |---|---|---|
 | `bootstrap/` | S3 bucket for Terraform state (versioned, encrypted) | permanent, local state |
-| `shared/` | VPC `10.3.0.0/16`, ECR repositories, JumpHost (SSM only, stopped by default), GitHub OIDC provider + CI/CD roles | permanent |
-| `stage-base/` | VPC `10.0.0.0/16` + peering, security groups, EFS, ECS cluster, log groups, secrets and the deployed image tag in SSM Parameter Store | permanent |
+| `shared/` | VPC `10.3.0.0/16`, ECR repositories, JumpHost (SSM only, stopped by default), GitHub OIDC provider + CI/CD roles, monthly budget, cost anomaly alert, cost allocation tags | permanent |
+| `stage-base/` | VPC `10.0.0.0/16` + peering, security groups, EFS, ECS cluster, log groups, CloudWatch dashboard, secrets and the deployed image tag in SSM Parameter Store | permanent |
 | `stage-app/` | NAT gateway, IAM task roles, Cloud Map (`wfm.local`), task definitions, 6 ECS services, ALB, CloudFront, backend autoscaling | **on demand** (~0.15 $/h) |
 | `modules/network/` | reusable VPC module (public/private subnets in 2 AZ) | — |
 
@@ -221,7 +222,9 @@ each one reads the previous layers' outputs from their state in S3:
 ```powershell
 $env:AWS_PROFILE = "wfm"
 cd terraform\bootstrap;  terraform init; terraform apply   # state bucket (its own state stays local)
-cd ..\shared;            terraform init; terraform apply   # VPC, ECR, JumpHost, OIDC roles
+cd ..\shared                                               # set cost_alert_email first:
+Copy-Item terraform.tfvars.example terraform.tfvars        #   git-ignored, edit the address
+terraform init; terraform apply                            # VPC, ECR, JumpHost, OIDC roles, budget
 cd ..\stage-base;        terraform init; terraform apply   # VPC + peering, SGs, EFS, ECS cluster, SSM params
 cd ..\..
 powershell -ExecutionPolicy Bypass -File .\scripts\set-stage-secrets.ps1   # .env.secrets -> SSM (SMTP, ntfy)
@@ -240,7 +243,8 @@ demand and the nightly destroy.
 
 Helper scripts: `scripts/build-push.ps1` (build + push to ECR),
 `scripts/set-stage-secrets.ps1` (upload `.env.secrets` to SSM),
-`scripts/load-test.py` (load generator for the autoscaling test).
+`scripts/load-test.py` (HTTP load generator), `scripts/cpu-stress.py` (CPU
+scaling test, see below), `scripts/dashboard-snapshot.py` (dashboard charts as PNG).
 
 ---
 
@@ -266,6 +270,43 @@ The deploy role can create IAM roles only with the **permissions boundary**
 Exec), and cannot remove it — so a pipeline change cannot mint an admin role.
 Both terraform workflows share a concurrency group, so only one run touches the
 `stage-app` state at a time (S3 native locking guards local runs too).
+
+---
+
+## 📈 Monitoring and cost
+
+**CloudWatch dashboard `wfm-stage`** (in `stage-base`, so it outlives each
+`stage-app` run): backend CPU against the 50% scaling target, healthy backend
+tasks behind the ALB, requests per minute, p50/p95 response time, 5xx errors,
+and CPU/memory per service. The ALB gets a new ID on every create, so its
+charts use `SEARCH` by name and merge successive stacks into one line; ECS
+metrics are referenced directly by cluster and service name. No Container
+Insights: the backend task count comes from the target group's
+`HealthyHostCount`. `scripts/dashboard-snapshot.py <start> <end> <dir>` saves
+every chart as a PNG.
+
+**Scaling tests** (`stage-app` running, results in the dashboard):
+
+| Test | Load | Result |
+|---|---|---|
+| `load-test.py` | HTTP on `/predict` (backend → InfluxDB) | backend 1 → 3 → 1 tasks; throughput limited by InfluxDB at 100% CPU — the bottleneck moves to the stateful tier |
+| `cpu-stress.py` | CPU only, inside every backend task via ECS Exec (`nice 10`, new tasks included), plus a `/health` probe | 1 → 2 (~5 min) → 3, back to 1 about 18 min after the load stops; InfluxDB ~3% CPU; 0 failed probes, 0 ALB 5xx |
+
+**Cost controls** (`terraform/shared/cost.tf`):
+
+- monthly budget (20 $) that counts **usage only** — on the AWS Free Plan,
+  credits would otherwise net the cost to ~0 and the alerts would never fire;
+  email at 50/80/100% actual and 100% forecasted;
+- Cost Anomaly Detection subscription: daily email for anomalies ≥ 2 $;
+- cost allocation tags `Project` and `Layer` (set on every resource through
+  provider `default_tags`, propagated to ECS tasks), so Cost Explorer can split
+  the bill per layer;
+- the expensive layer exists only on demand, with a nightly destroy.
+
+The alert address comes from `cost_alert_email` in the git-ignored
+`terraform/shared/terraform.tfvars`. AWS asks to verify that address (an
+"Email verification" message from AWS User Notifications) before it delivers
+budget alerts.
 
 ---
 
@@ -415,7 +456,7 @@ water-filter-monitor/
 ├── mosquitto/                  # broker config, baked into a custom image
 ├── grafana/                    # pinned Grafana + provisioning, baked into a custom image
 ├── .github/workflows/          # ci.yml, deploy.yml, stage.yml (see "CI/CD")
-├── scripts/                    # build-push.ps1, set-stage-secrets.ps1, load-test.py
+├── scripts/                    # build/push, secrets upload, load + CPU scaling tests, dashboard snapshots
 └── terraform/                  # AWS infrastructure (see "Deployment on AWS")
     ├── bootstrap/  shared/  stage-base/  stage-app/
     └── modules/network/
@@ -460,3 +501,22 @@ address changes on every create.
 
 **Git Bash turns `/wfm/stage/...` into a Windows path** (`ParameterNotFound`) —
 prefix the command with `MSYS_NO_PATHCONV=1`, or use PowerShell.
+
+**`Error acquiring the state lock` (412 PreconditionFailed)** — an interrupted
+Terraform run left its `.tflock` object in S3 (for example, piping `terraform
+plan` into `Select-Object -First N` stops the process early). Check *Lock Info*
+(who, operation, when); if it is your own stale lock, run `terraform
+force-unlock <ID>`. Write Terraform output to a file before filtering it.
+
+**ECS Exec: `execute command agent isn't running`** — the agent starts some
+seconds after the task is `RUNNING`; retry. `cpu-stress.py` retries on its own.
+From PowerShell 5.1, pass commands with inner quotes through Python
+`subprocess` — PowerShell strips them when calling native programs.
+
+---
+
+## 🛠️ Development notes
+
+Built with an AI coding assistant (Claude Code): code was generated from my
+requirements and design decisions, then applied, reviewed and verified in AWS
+by me.

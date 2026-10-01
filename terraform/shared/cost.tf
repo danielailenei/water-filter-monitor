@@ -1,5 +1,5 @@
-# Monitorizarea costurilor la nivel de cont (Pasul 8.1).
-# Bugetul si monitorul de anomalii existau deja (bugetul creat manual in consola la Pasul 0,
+# Monitorizarea costurilor la nivel de cont.
+# Bugetul si monitorul de anomalii existau deja (bugetul creat manual in consola la configurarea contului,
 # monitorul creat automat de AWS) -> sunt importate in Terraform, nu recreate.
 
 import {
