@@ -268,7 +268,7 @@ credentials only if the token matches the role's trust policy exactly.
 
 | Workflow | Trigger | What it does |
 |---|---|---|
-| `ci.yml` | pull request to `main` | `terraform fmt` + `validate` (4 layers), Python byte-compile + `pip check`, ARM64 Docker build of the 4 images — no AWS access |
+| `ci.yml` | pull request to `main` or `develop` | `terraform fmt` + `validate` (4 layers), Python byte-compile + `pip check`, ARM64 Docker build of the 4 images — no AWS access |
 | `deploy.yml` | push to `main` touching app code | build ARM64 images on a native ARM runner → ECR (tag = short SHA) → fail on CRITICAL CVEs from the ECR scan → publish the tag to SSM → if `stage-app` is running: `terraform apply`, wait for ECS services, smoke test |
 | `stage.yml` | manual (`create` / `destroy`), nightly at 20:00 UTC | on-demand environment: create `stage-app` + smoke test, or destroy it; the nightly run destroys a forgotten stack |
 
