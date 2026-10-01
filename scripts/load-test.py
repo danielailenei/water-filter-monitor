@@ -1,4 +1,4 @@
-"""Generator de incarcare pentru testul de autoscaling (pasul 6.7).
+"""Generator de incarcare HTTP pentru testul de autoscaling al backend-ului.
 
 Trimite cereri HTTP concurente catre o adresa si afiseaza la fiecare 10 s
 numarul de cereri, erorile si latenta medie. Doar biblioteca standard.
