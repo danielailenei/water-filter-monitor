@@ -11,6 +11,11 @@ resource "aws_ecs_service" "app" {
   task_definition = aws_ecs_task_definition.app[each.key].arn
   desired_count   = 1
 
+  # Taskurile Fargate (unde e costul) primesc tag-urile serviciului (Project/Layer)
+  # -> costul ECS apare pe tag-uri in Cost Explorer; plus tag-uri aws:ecs:* de la ECS
+  propagate_tags          = "SERVICE"
+  enable_ecs_managed_tags = true
+
   capacity_provider_strategy {
     capacity_provider = "FARGATE" # nu FARGATE_SPOT: Spot nu suporta ARM64
     weight            = 1
