@@ -1,9 +1,22 @@
 {
   "title": "Water Filter Monitor",
   "uid": "water-filter-monitor",
+  "tags": ["wfm"],
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": ["wfm"],
+      "asDropdown": true,
+      "title": "Mentenanță",
+      "includeVars": false,
+      "keepTime": false,
+      "icon": "external link",
+      "targetBlank": false
+    }
+  ],
   "timezone": "Europe/Bucharest",
   "schemaVersion": 39,
-  "version": 2,
+  "version": 3,
   "refresh": "5s",
   "time": {
     "from": "now-1h",

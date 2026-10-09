@@ -52,7 +52,7 @@ def _duration(seconds: float) -> str:
 
 
 def build_alert(threshold: int, pressure: float, clog_threshold: float,
-                reading: dict | None, app_url: str, grafana_url: str) -> dict:
+                reading: dict | None, app_url: str) -> dict:
     """Everything the senders need: subject, plain text, HTML, push title/body."""
     lv = LEVELS[threshold]
     reading = reading or {}
@@ -75,7 +75,7 @@ def build_alert(threshold: int, pressure: float, clog_threshold: float,
     text = "\n".join(
         [lv["headline"] + f" ({pct:.0f}% înfundare)", "", lv["advice"], ""]
         + [f"{k}: {v}" for k, v in rows]
-        + ["", f"Dashboard: {app_url}", f"Grafana: {grafana_url}", "", f"Water Filter Monitor · {now}"]
+        + ["", f"Dashboard: {app_url}", "", f"Water Filter Monitor · {now}"]
     )
 
     # ---- HTML email: tables + inline styles, the only layout mail clients agree on ----
@@ -113,9 +113,6 @@ def build_alert(threshold: int, pressure: float, clog_threshold: float,
     <tr><td style="padding:18px 24px 24px">
       <a href="{esc(app_url)}" style="display:inline-block;background:{lv['color']};color:#ffffff;
          padding:10px 18px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">Deschide dashboard</a>
-      &nbsp;
-      <a href="{esc(grafana_url)}" style="display:inline-block;border:1px solid #d1d5db;color:#374151;
-         padding:9px 16px;border-radius:8px;text-decoration:none;font-weight:600;font-size:14px">Grafana</a>
     </td></tr>
     <tr><td style="padding:12px 24px;background:#f9fafb;font-size:12px;color:#9ca3af;border-top:1px solid #f3f4f6">
       Alertă automată · {esc(now)} · o singură notificare per prag, până la schimbarea filtrului.

@@ -1,0 +1,740 @@
+{
+  "title": "Mentenanță – AWS (CloudWatch)",
+  "uid": "wfm-maintenance-aws",
+  "tags": [
+    "wfm",
+    "mentenanta",
+    "aws"
+  ],
+  "timezone": "Europe/Bucharest",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "5m",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "wfm"
+      ],
+      "asDropdown": true,
+      "title": "Water Filter Monitor",
+      "includeVars": false,
+      "keepTime": false,
+      "icon": "external link",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 20,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Mentenanță – AWS (CloudWatch)\n**Responsabil:** DevOps"
+      }
+    },
+    {
+      "id": 1,
+      "title": "CPU (%) pe servicii",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch-wfm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/ECS",
+          "metricName": "CPUUtilization",
+          "dimensions": {
+            "ClusterName": "wfm-stage",
+            "ServiceName": "*"
+          },
+          "matchExact": true,
+          "statistic": "Average",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "${PROP('Dim.ServiceName')}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "axisSoftMax": 100
+          }
+        },
+        "overrides": []
+      },
+      "description": "Backend scalează automat la CPU mediu 50%. Un worker sau InfluxDB la 100% este blocajul."
+    },
+    {
+      "id": 2,
+      "title": "Memorie (%) pe servicii",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch-wfm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/ECS",
+          "metricName": "MemoryUtilization",
+          "dimensions": {
+            "ClusterName": "wfm-stage",
+            "ServiceName": "*"
+          },
+          "matchExact": true,
+          "statistic": "Average",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "${PROP('Dim.ServiceName')}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10,
+            "axisSoftMax": 100
+          }
+        },
+        "overrides": []
+      },
+      "description": "O memorie care crește constant la un serviciu poate indica o scurgere."
+    },
+    {
+      "id": 3,
+      "title": "Taskuri sănătoase în ALB",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 11,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch-wfm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HealthyHostCount",
+          "dimensions": {
+            "LoadBalancer": "*",
+            "TargetGroup": "*"
+          },
+          "matchExact": true,
+          "statistic": "Maximum",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "${PROP('Dim.TargetGroup')}"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 0
+          }
+        },
+        "overrides": []
+      },
+      "description": "0 la backend sau Grafana = serviciul nu răspunde la health check."
+    },
+    {
+      "id": 4,
+      "title": "ALB — cereri pe minut",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 8,
+        "y": 11,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch-wfm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "RequestCount",
+          "dimensions": {
+            "LoadBalancer": "*"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "cereri"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 5,
+      "title": "ALB — timp de răspuns (s)",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 16,
+        "y": 11,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch-wfm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "TargetResponseTime",
+          "dimensions": {
+            "LoadBalancer": "*"
+          },
+          "matchExact": true,
+          "statistic": "p50",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "p50"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "TargetResponseTime",
+          "dimensions": {
+            "LoadBalancer": "*"
+          },
+          "matchExact": true,
+          "statistic": "p95",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "p95"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 6,
+      "title": "Erori 5xx pe minut",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 19,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch-wfm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_Target_5XX_Count",
+          "dimensions": {
+            "LoadBalancer": "*"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "aplicație (target)"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/ApplicationELB",
+          "metricName": "HTTPCode_ELB_5XX_Count",
+          "dimensions": {
+            "LoadBalancer": "*"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "ALB (ex. 503 fără taskuri)"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 7,
+      "title": "NAT — trafic spre exterior",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 8,
+        "y": 19,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch-wfm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/NATGateway",
+          "metricName": "BytesOutToDestination",
+          "dimensions": {
+            "NatGatewayId": "*"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "octeți ieșiți"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "description": "Ieșirea spre internet: SMTP și ntfy. Gateway-ul NAT este principalul cost orar din stack."
+    },
+    {
+      "id": 8,
+      "title": "NAT — pachete pierdute și erori de porturi",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 16,
+        "y": 19,
+        "w": 8,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch-wfm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/NATGateway",
+          "metricName": "PacketsDropCount",
+          "dimensions": {
+            "NatGatewayId": "*"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "pachete pierdute"
+        },
+        {
+          "refId": "B",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/NATGateway",
+          "metricName": "ErrorPortAllocation",
+          "dimensions": {
+            "NatGatewayId": "*"
+          },
+          "matchExact": true,
+          "statistic": "Sum",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "erori alocare porturi"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "description": "Ar trebui să rămână la 0."
+    },
+    {
+      "id": 9,
+      "title": "EFS — dimensiunea datelor InfluxDB",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 27,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch-wfm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/EFS",
+          "metricName": "StorageBytes",
+          "dimensions": {
+            "FileSystemId": "*",
+            "StorageClass": "Total"
+          },
+          "matchExact": true,
+          "statistic": "Average",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "date stocate"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "description": "Creșterea stocării în timp, pentru a anticipa costul și retenția."
+    },
+    {
+      "id": 10,
+      "title": "EFS — credite de burst",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 27,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "cloudwatch",
+        "uid": "cloudwatch-wfm"
+      },
+      "targets": [
+        {
+          "refId": "A",
+          "datasource": {
+            "type": "cloudwatch",
+            "uid": "cloudwatch-wfm"
+          },
+          "queryMode": "Metrics",
+          "metricQueryType": 0,
+          "metricEditorMode": 0,
+          "namespace": "AWS/EFS",
+          "metricName": "BurstCreditBalance",
+          "dimensions": {
+            "FileSystemId": "*"
+          },
+          "matchExact": true,
+          "statistic": "Average",
+          "period": "60",
+          "region": "default",
+          "id": "",
+          "expression": "",
+          "sqlExpression": "",
+          "label": "credite"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": true,
+          "displayMode": "list",
+          "placement": "bottom"
+        },
+        "tooltip": {
+          "mode": "multi"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "bytes",
+          "min": 0,
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "description": "La mod bursting, dacă soldul scade spre 0 scrierile încetinesc."
+    }
+  ]
+}

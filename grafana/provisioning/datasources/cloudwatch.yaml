@@ -1,0 +1,14 @@
+apiVersion: 1
+
+# Metricile AWS pentru dashboard-ul de mentenanta. Credentialele vin din lantul implicit AWS:
+# pe ECS = rolul taskului Grafana (doar citire CloudWatch, vezi terraform/stage-app/iam.tf);
+# local, fara credentiale AWS, panourile raman goale.
+datasources:
+  - name: CloudWatch
+    uid: cloudwatch-wfm
+    type: cloudwatch
+    access: proxy
+    jsonData:
+      authType: default
+      defaultRegion: eu-central-1
+    editable: true

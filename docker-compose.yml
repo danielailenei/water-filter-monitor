@@ -42,7 +42,6 @@ services:
       - INFLUX_TOKEN=${INFLUX_TOKEN:-changeme}
       - INFLUX_ORG=disertatie
       - INFLUX_BUCKET=water_filter
-      - GRAFANA_URL=http://localhost:3000 # the dashboard's Grafana link
       # Prediction model - keep in sync with sensor/config.yaml
       - CLOG_THRESHOLD_BAR=1.5
       - SUPPLY_PRESSURE_BAR=4.0
@@ -68,9 +67,8 @@ services:
       - INFLUX_ORG=disertatie
       - INFLUX_BUCKET=water_filter
       - CLOG_THRESHOLD_BAR=1.5
-      # Links put in the email/push alerts
+      # Link put in the email/push alerts
       - APP_URL=http://localhost:8000
-      - GRAFANA_URL=http://localhost:3000
     env_file:
       - path: .env.secrets
         required: false

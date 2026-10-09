@@ -495,12 +495,6 @@ $("chart").addEventListener("mousemove", onChartMove);
 $("chart").addEventListener("mouseleave", onChartLeave);
 window.addEventListener("resize", () => drawChart());
 
-/* The Grafana address depends on where the stack runs (localhost:3000 with
- * docker compose, /grafana/ behind CloudFront on AWS) - the backend knows it. */
-getJSON("/config")
-  .then((cfg) => { $("grafana-link").href = cfg.grafana_url; })
-  .catch((err) => console.error(err));
-
 selectMetric("pressure");
 poll();
 setInterval(poll, POLL_MS);

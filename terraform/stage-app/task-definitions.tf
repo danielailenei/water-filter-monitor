@@ -10,7 +10,8 @@ locals {
   }
   influx_url = "http://influxdb.wfm.local:8086"
 
-  # Adresele publice (CloudFront): link-ul Grafana din dashboard si link-urile din alerte
+  # Adresele publice (CloudFront): link-ul din alerte (utilizatorul vede doar aplicatia);
+  # Grafana e doar pentru mentenanta (DevOps), nu apare in nicio alerta sau pagina de utilizator
   app_url     = "https://${aws_cloudfront_distribution.this.domain_name}"
   grafana_url = "${local.app_url}/grafana/"
 
@@ -53,7 +54,6 @@ locals {
         INFLUX_URL    = local.influx_url
         INFLUX_ORG    = "disertatie"
         INFLUX_BUCKET = "water_filter"
-        GRAFANA_URL   = local.grafana_url
         # Modelul de predictie - aceleasi valori ca sensor/config.yaml
         CLOG_THRESHOLD_BAR  = "1.5"
         SUPPLY_PRESSURE_BAR = "4.0"
@@ -76,7 +76,6 @@ locals {
         INFLUX_BUCKET      = "water_filter"
         CLOG_THRESHOLD_BAR = "1.5"
         APP_URL            = local.app_url
-        GRAFANA_URL        = local.grafana_url
       })
       secrets = {
         INFLUX_TOKEN   = local.secret["influx/token"]
@@ -125,7 +124,7 @@ resource "aws_ecs_task_definition" "app" {
   cpu                      = each.value.cpu
   memory                   = each.value.memory
   execution_role_arn       = aws_iam_role.execution.arn
-  task_role_arn            = aws_iam_role.task.arn
+  task_role_arn            = each.key == "grafana" ? aws_iam_role.grafana_task.arn : aws_iam_role.task.arn
 
   # Imaginile noastre sunt construite pentru Graviton (Fargate Spot nu suporta ARM64)
   runtime_platform {
