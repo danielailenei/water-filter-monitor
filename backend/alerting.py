@@ -8,7 +8,9 @@ can alert again. Every send is retried a few times so a transient network
 error does not silently drop an alert.
 
 Which thresholds already fired is saved in InfluxDB (alert_event), so a
-restart or redeploy of the worker does not notify the same cycle twice.
+restart or redeploy of the worker does not notify the same cycle twice. If that
+state cannot be read at startup, alerting waits until it can (it never assumes
+"nothing sent yet").
 
 Configuration via environment variables (see .env.secrets.example):
     SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, ALERT_EMAIL_TO, NTFY_TOPIC
@@ -75,12 +77,22 @@ class AlertManager:
         # None keeps the state in memory only.
         self._store = store
         self._fired = set()  # thresholds already notified in the current cycle
+        self._restored = store is None  # nothing to restore without a store
         if store is not None:
-            try:
-                self._fired = store.get_fired_thresholds()
-                print(f"[alerting] restored state: already notified {sorted(self._fired) or 'nothing'}")
-            except Exception as e:
-                print(f"[alerting] could not restore state, starting empty: {e}")
+            # On a cold start the database (or its DNS name) may not answer yet.
+            self._restore(attempts=RETRY_ATTEMPTS)
+
+    def _restore(self, attempts: int = 1) -> bool:
+        """Load the already-notified thresholds from the store. Until this succeeds the
+        state is unknown, and alerting is paused rather than started from an empty set:
+        an empty set would send the same cycle's alerts a second time."""
+        def _load():
+            self._fired = self._store.get_fired_thresholds()
+
+        if _with_retry("restoring alert state", _load, attempts=attempts):
+            self._restored = True
+            print(f"[alerting] restored state: already notified {sorted(self._fired) or 'nothing'}")
+        return self._restored
 
     def _record(self, kind: str, threshold: int = 0):
         if self._store is None:
@@ -101,6 +113,8 @@ class AlertManager:
         # reading: the full sensor message, for the extra values shown in the alert
         if clog_threshold_bar <= 0:
             return
+        if not self._restored and not self._restore():
+            return  # state unknown: the reading is already stored, alerts wait for the database
         pct = (pressure_drop_bar / clog_threshold_bar) * 100
 
         if pct < RESET_BELOW_PCT and self._fired:
