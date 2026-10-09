@@ -74,3 +74,37 @@ resource "aws_iam_role_policy" "task_ecs_exec" {
   role   = aws_iam_role.task.id
   policy = data.aws_iam_policy_document.ecs_exec.json
 }
+
+# ---------- 3. Task role Grafana: citire CloudWatch (mentenanta) ----------
+# Rol separat: doar Grafana citeste metricile; backend-ul si worker-ul nu primesc drepturi in plus.
+resource "aws_iam_role" "grafana_task" {
+  name               = "wfm-stage-grafana-task-role"
+  assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume.json
+
+  permissions_boundary = local.shared.stage_role_boundary_arn
+}
+
+data "aws_iam_policy_document" "grafana_cloudwatch_read" {
+  statement {
+    actions = [
+      "cloudwatch:GetMetricData",
+      "cloudwatch:GetMetricStatistics",
+      "cloudwatch:ListMetrics",
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:DescribeAlarmsForMetric",
+    ]
+    resources = ["*"] # API-urile de citire nu accepta restrangere pe resursa
+  }
+}
+
+resource "aws_iam_role_policy" "grafana_cloudwatch_read" {
+  name   = "cloudwatch-read"
+  role   = aws_iam_role.grafana_task.id
+  policy = data.aws_iam_policy_document.grafana_cloudwatch_read.json
+}
+
+resource "aws_iam_role_policy" "grafana_ecs_exec" {
+  name   = "ecs-exec"
+  role   = aws_iam_role.grafana_task.id
+  policy = data.aws_iam_policy_document.ecs_exec.json
+}

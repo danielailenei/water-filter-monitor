@@ -309,6 +309,20 @@ data "aws_iam_policy_document" "stage_role_boundary" {
     resources = ["arn:aws:ssm:${var.aws_region}:${local.account_id}:parameter/wfm/stage/*"]
   }
 
+  # Task role Grafana: citirea metricilor CloudWatch pentru dashboard-ul de mentenanta
+  # (API-urile de citire nu accepta restrangere pe resursa)
+  statement {
+    sid = "CloudWatchRead"
+    actions = [
+      "cloudwatch:GetMetricData",
+      "cloudwatch:GetMetricStatistics",
+      "cloudwatch:ListMetrics",
+      "cloudwatch:DescribeAlarms",
+      "cloudwatch:DescribeAlarmsForMetric",
+    ]
+    resources = ["*"]
+  }
+
   # Task role: ECS Exec
   statement {
     sid = "EcsExec"

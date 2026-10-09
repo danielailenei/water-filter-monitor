@@ -53,8 +53,9 @@ filter. The system:
 - 📡 collects data over **MQTT**, the standard IoT messaging protocol;
 - 🗄️ stores the full history in a **time-series database** (InfluxDB);
 - 📊 displays it live on a **built-in dashboard** (served by the backend at
-  `/`, in Romanian, times in Europe/Bucharest) and on an auto-provisioned
-  **Grafana dashboard** for deeper analysis;
+  `/`, in Romanian, times in Europe/Bucharest); an auto-provisioned **Grafana**
+  is kept for maintenance (DevOps only — users never see it, alerts and the
+  web dashboard don't link to it);
 - 🤖 **predicts**, via a regression model, how long remains before the
   filter fully clogs, next to the simulator's exact value for comparison;
 - 🔔 sends **email + push notifications** (ntfy.sh) at 80%, 90%, and 100% of
@@ -146,8 +147,16 @@ curl.exe http://localhost:8000/predict
 | 🗄️ InfluxDB UI | http://localhost:8086 | `admin` / value from `.env` |
 | ⚙️ Backend API | http://localhost:8000/docs | — |
 
-In Grafana the *"Water Filter Monitor"* dashboard is already provisioned, with
-charts refreshing every 5 seconds.
+In Grafana three dashboards are already provisioned:
+
+- *"Water Filter Monitor"* — the readings, refreshing every 5 seconds;
+- *"Mentenanță – aplicație"* — sensor heartbeat and state, data completeness,
+  readings per minute, pressure variation (a flat line = stuck sensor) and the
+  alerts sent. Reads only InfluxDB;
+- *"Mentenanță – AWS (CloudWatch)"* — CPU/memory per service, healthy targets,
+  ALB requests/latency/5xx, NAT and EFS. Standard (free-to-publish) CloudWatch
+  metrics only, refreshed every 5 minutes; on AWS the Grafana task has its own
+  read-only CloudWatch role, locally the panels stay empty (no AWS credentials).
 
 To iterate on the sensor without rebuilding its image, stop the container and
 run it with plain Python — it reads the same `config.yaml`:
@@ -334,7 +343,6 @@ Locally at `http://localhost:8000` (interactive docs at `/docs`); on AWS at the 
 | `GET /history?hours=24` | Reading history from InfluxDB (`hours` 0.05–720, fractional allowed) |
 | `GET /predict?hours=24` | Prediction: time remaining until clogging, plus `R²` |
 | `GET /alerts?hours=24` | Recent alert events written by the worker (threshold sent / filter reset) |
-| `GET /config` | Public links for the dashboard (Grafana URL for the current environment) |
 
 The dashboard is plain static files in `backend/static/`, mounted with FastAPI's
 `StaticFiles`. It shares the backend's origin, so there is no CORS to configure.
@@ -386,13 +394,13 @@ notification when it crosses **80%, 90%, 100%**:
   resets, so the next cycle can alert again;
 - each send (email over SMTP + push via [ntfy.sh](https://ntfy.sh)) is
   retried up to 3 times, so a transient network error doesn't drop an alert;
-- alerts link to the dashboard and to Grafana (`APP_URL`, `GRAFANA_URL`);
-  tapping the push notification opens the dashboard.
+- alerts link only to the dashboard (`APP_URL`); Grafana is for maintenance and
+  is deliberately not linked. Tapping the push notification opens the dashboard.
 
 The messages (`alert_templates.py`, in Romanian) are an **HTML email** coloured
 per level (amber / orange / red) with a plain-text fallback, and an ntfy push
-published as JSON with Markdown, rising priority (3 → 5), an icon and action
-buttons. Times are shown in `ALERT_TIMEZONE` (default `Europe/Bucharest`).
+published as JSON with Markdown, rising priority (3 → 5), an icon and a
+"Dashboard" button. Times are shown in `ALERT_TIMEZONE` (default `Europe/Bucharest`).
 
 Credentials come from `.env.secrets` locally (git-ignored) and from SSM
 Parameter Store on AWS. Without them, alerts are skipped and the rest of the
@@ -407,8 +415,8 @@ system runs normally.
 | `sensor/config.yaml` | Simulation parameters — clogging rate, base values, `clog_threshold_bar`, `supply_pressure_bar` (mains pressure), raw-water turbidity, `time_acceleration`, publish interval |
 | `.env` (from `.env.example`) | Local passwords/token read by `docker-compose.yml`; connection values for running the Python code outside Docker |
 | `.env.secrets` (from `.env.secrets.example`) | SMTP + ntfy.sh credentials for alerting — **never committed** |
-| `docker-compose.yml` | Local services, ports, volumes, `APP_URL` / `GRAFANA_URL` |
-| `grafana/provisioning/` | Datasource + dashboard, baked into the Grafana image |
+| `docker-compose.yml` | Local services, ports, volumes, `APP_URL` |
+| `grafana/provisioning/` | Datasources (InfluxDB, CloudWatch) + dashboards (readings, maintenance), baked into the Grafana image |
 | `terraform/stage-app/task-definitions.tf` | Same settings for AWS (addresses, sizes, secrets from SSM) |
 
 Environment variables read by the Python services (defaults in brackets):
@@ -419,7 +427,7 @@ Environment variables read by the Python services (defaults in brackets):
 | `INFLUX_URL` / `INFLUX_TOKEN` / `INFLUX_ORG` / `INFLUX_BUCKET` | worker, backend | InfluxDB connection [`http://localhost:8086` / — / `disertatie` / `water_filter`] |
 | `CLOG_THRESHOLD_BAR` | worker, backend | pressure that counts as clogged; base of the 80/90/100% alerts [`1.5`] |
 | `SUPPLY_PRESSURE_BAR` | backend | mains pressure used by the prediction [`4.0`] — keep in sync with `sensor/config.yaml` |
-| `APP_URL` / `GRAFANA_URL` | worker, backend | public links in alerts and on the dashboard [`http://localhost:8000` / `http://localhost:3000`] |
+| `APP_URL` | worker | public link in the alerts [`http://localhost:8000`] |
 | `SMTP_HOST` / `SMTP_PORT` / `SMTP_USER` / `SMTP_PASSWORD` / `ALERT_EMAIL_TO` | worker | email alerts [`smtp.gmail.com` / `465` / — ] |
 | `NTFY_TOPIC` | worker | ntfy.sh topic for push alerts |
 | `ALERT_TIMEZONE` | worker | time zone of the times in alerts [`Europe/Bucharest`] |

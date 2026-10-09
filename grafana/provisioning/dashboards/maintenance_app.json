@@ -1,0 +1,562 @@
+{
+  "title": "Mentenanță – aplicație",
+  "uid": "wfm-maintenance-app",
+  "tags": [
+    "wfm",
+    "mentenanta"
+  ],
+  "timezone": "Europe/Bucharest",
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "10s",
+  "time": {
+    "from": "now-3h",
+    "to": "now"
+  },
+  "links": [
+    {
+      "type": "dashboards",
+      "tags": [
+        "wfm"
+      ],
+      "asDropdown": true,
+      "title": "Water Filter Monitor",
+      "includeVars": false,
+      "keepTime": false,
+      "icon": "external link",
+      "targetBlank": false
+    }
+  ],
+  "panels": [
+    {
+      "id": 20,
+      "type": "text",
+      "title": "",
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 24,
+        "h": 3
+      },
+      "options": {
+        "mode": "markdown",
+        "content": "### Mentenanță – aplicație\n**Responsabil:** DevOps"
+      }
+    },
+    {
+      "id": 1,
+      "title": "Senzor — ultima citire acum",
+      "type": "stat",
+      "gridPos": {
+        "x": 0,
+        "y": 3,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: -24h) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"pressure_drop_bar\") |> last() |> map(fn: (r) => ({ r with _value: float(v: int(v: now()) - int(v: r._time)) / 1000000000.0 }))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "suffix: s",
+          "decimals": 0,
+          "noValue": "fără date",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 15
+              },
+              {
+                "color": "red",
+                "value": 60
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Senzorul publică la 5 s. Peste ~15 s fără citire apare galben, peste 60 s roșu."
+    },
+    {
+      "id": 2,
+      "title": "Stare senzor",
+      "type": "stat",
+      "gridPos": {
+        "x": 6,
+        "y": 3,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: -24h) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"pressure_drop_bar\") |> last() |> map(fn: (r) => ({ r with _value: float(v: int(v: now()) - int(v: r._time)) / 1000000000.0 }))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "background",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "noValue": "FĂRĂ DATE",
+          "unit": "none",
+          "mappings": [
+            {
+              "type": "range",
+              "options": {
+                "from": 0,
+                "to": 30,
+                "result": {
+                  "text": "Activ",
+                  "color": "green"
+                }
+              }
+            },
+            {
+              "type": "range",
+              "options": {
+                "from": 30,
+                "to": 1000000000,
+                "result": {
+                  "text": "FĂRĂ DATE RECENTE",
+                  "color": "red"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "description": "Activ = ultima citire are sub 30 s. Un senzor mort arată altfel ca „totul e bine”, de aceea îl urmărim separat."
+    },
+    {
+      "id": 3,
+      "title": "Completitudine date (1 h)",
+      "type": "gauge",
+      "gridPos": {
+        "x": 12,
+        "y": 3,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: -1h) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"pressure_drop_bar\") |> count() |> map(fn: (r) => ({ r with _value: if float(v: r._value) / 720.0 * 100.0 > 100.0 then 100.0 else float(v: r._value) / 720.0 * 100.0 }))",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showThresholdMarkers": true,
+        "showThresholdLabels": false,
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent",
+          "min": 0,
+          "max": 100,
+          "decimals": 0,
+          "noValue": "fără date",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "red",
+                "value": null
+              },
+              {
+                "color": "yellow",
+                "value": 80
+              },
+              {
+                "color": "green",
+                "value": 95
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Citiri primite față de cele așteptate într-o oră (720 la un interval de 5 s). Scade dacă se pierd mesaje MQTT sau scrieri în InfluxDB."
+    },
+    {
+      "id": 4,
+      "title": "Citiri stocate (24 h)",
+      "type": "stat",
+      "gridPos": {
+        "x": 18,
+        "y": 3,
+        "w": 6,
+        "h": 5
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: -24h) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"pressure_drop_bar\") |> count()",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Așteptat: ~17 280 pe zi (una la 5 s)."
+    },
+    {
+      "id": 5,
+      "title": "Citiri pe minut (așteptat: 12)",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 0,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"pressure_drop_bar\") |> aggregateWindow(every: 1m, fn: count, createEmpty: true)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "min": 0,
+          "displayName": "citiri / minut",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#38bdf8"
+          },
+          "custom": {
+            "drawStyle": "bars",
+            "fillOpacity": 40,
+            "lineWidth": 1,
+            "axisSoftMax": 14
+          }
+        },
+        "overrides": []
+      },
+      "description": "Goluri sau valori sub 12 înseamnă că senzorul, broker-ul MQTT sau worker-ul au pierdut mesaje. Ultima bară poate fi incompletă."
+    },
+    {
+      "id": 6,
+      "title": "Variația presiunii pe 5 min (0 = senzor blocat)",
+      "type": "timeseries",
+      "gridPos": {
+        "x": 12,
+        "y": 8,
+        "w": 12,
+        "h": 8
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: v.timeRangeStart, stop: v.timeRangeStop) |> filter(fn: (r) => r._measurement == \"filter_reading\" and r._field == \"pressure_drop_bar\") |> aggregateWindow(every: 5m, fn: stddev, createEmpty: false)",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "legend": {
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single"
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "decimals": 4,
+          "min": 0,
+          "displayName": "abatere standard",
+          "color": {
+            "mode": "fixed",
+            "fixedColor": "#fbbf24"
+          },
+          "custom": {
+            "lineWidth": 2,
+            "fillOpacity": 10
+          }
+        },
+        "overrides": []
+      },
+      "description": "Un senzor care raportează aceeași valoare exactă mult timp este probabil blocat, chiar dacă mesajele continuă să sosească."
+    },
+    {
+      "id": 7,
+      "title": "Alerte trimise și resetări (ultimele 7 zile)",
+      "type": "table",
+      "gridPos": {
+        "x": 0,
+        "y": 16,
+        "w": 16,
+        "h": 8
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: -7d) |> filter(fn: (r) => r._measurement == \"alert_event\" and r._field == \"threshold\") |> group() |> sort(columns: [\"_time\"], desc: true) |> limit(n: 50) |> keep(columns: [\"_time\", \"kind\", \"_value\"])",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm"
+      },
+      "fieldConfig": {
+        "defaults": {
+          "custom": {
+            "align": "auto"
+          }
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "_time"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Moment"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "_value"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Prag (%)"
+              },
+              {
+                "id": "unit",
+                "value": "none"
+              }
+            ]
+          },
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "kind"
+            },
+            "properties": [
+              {
+                "id": "displayName",
+                "value": "Tip"
+              },
+              {
+                "id": "mappings",
+                "value": [
+                  {
+                    "type": "value",
+                    "options": {
+                      "sent": {
+                        "text": "Alertă trimisă",
+                        "color": "orange"
+                      },
+                      "reset": {
+                        "text": "Resetare (filtru nou)",
+                        "color": "green"
+                      }
+                    }
+                  }
+                ]
+              },
+              {
+                "id": "custom.cellOptions",
+                "value": {
+                  "type": "color-text"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "description": "Starea alertelor din InfluxDB (alert_event). Pragul 0 la o resetare înseamnă că nu are prag asociat."
+    },
+    {
+      "id": 8,
+      "title": "Alerte trimise (7 z)",
+      "type": "stat",
+      "gridPos": {
+        "x": 16,
+        "y": 16,
+        "w": 4,
+        "h": 8
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: -7d) |> filter(fn: (r) => r._measurement == \"alert_event\" and r._field == \"threshold\") |> filter(fn: (r) => r.kind == \"sent\") |> group() |> count()",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "blue",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      }
+    },
+    {
+      "id": 9,
+      "title": "Filtre schimbate",
+      "type": "stat",
+      "gridPos": {
+        "x": 20,
+        "y": 16,
+        "w": 4,
+        "h": 8
+      },
+      "datasource": {
+        "type": "influxdb",
+        "uid": "influxdb-water-filter"
+      },
+      "targets": [
+        {
+          "query": "from(bucket: \"water_filter\") |> range(start: -30d) |> filter(fn: (r) => r._measurement == \"alert_event\" and r._field == \"threshold\") |> filter(fn: (r) => r.kind == \"reset\") |> group() |> count()",
+          "refId": "A"
+        }
+      ],
+      "options": {
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "value",
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ]
+        }
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "0",
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "description": "Câte resetări (cicluri de filtru încheiate) au fost înregistrate în ultimele 30 de zile."
+    }
+  ]
+}

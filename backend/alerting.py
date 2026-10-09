@@ -12,7 +12,7 @@ restart or redeploy of the worker does not notify the same cycle twice.
 
 Configuration via environment variables (see .env.secrets.example):
     SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASSWORD, ALERT_EMAIL_TO, NTFY_TOPIC
-    APP_URL, GRAFANA_URL - public links put in the alerts (localhost by default)
+    APP_URL - public link put in the alerts (localhost by default)
 """
 
 import os
@@ -45,7 +45,6 @@ NTFY_URL = "https://ntfy.sh/"
 # Where the alert links point: localhost for docker compose, the CloudFront
 # address on AWS (set in the ECS task definition).
 APP_URL = os.getenv("APP_URL", "http://localhost:8000").rstrip("/")
-GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000").rstrip("/")
 
 THRESHOLDS = [80, 90, 100]
 RESET_BELOW_PCT = 50  # below this we assume the filter was replaced
@@ -118,7 +117,7 @@ class AlertManager:
         # The alert names the threshold crossed (80/90/100), not the raw ratio:
         # pressure keeps rising after clogging, so the ratio can read e.g. "215%".
         alert = build_alert(threshold, pressure_drop_bar, clog_threshold_bar,
-                            reading, APP_URL, GRAFANA_URL)
+                            reading, APP_URL)
         self._send_email(alert)
         self._send_push(alert)
 
@@ -156,11 +155,10 @@ class AlertManager:
                     "topic": NTFY_TOPIC,
                     **alert["push"],        # title, message, priority (3-5), tags (icon)
                     "markdown": True,
-                    # Tapping the notification opens the dashboard; buttons for both
+                    # Tapping the notification opens the dashboard
                     "click": APP_URL,
                     "actions": [
                         {"action": "view", "label": "Dashboard", "url": APP_URL},
-                        {"action": "view", "label": "Grafana", "url": GRAFANA_URL},
                     ],
                 },
                 timeout=5,

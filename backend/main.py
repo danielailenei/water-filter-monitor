@@ -9,19 +9,13 @@ Exposes:
     GET /history?hours=24    - reading history from InfluxDB
     GET /predict?hours=24    - predicted time until the filter clogs (current cycle)
     GET /alerts?hours=24     - recent alert events (sent / filter reset)
-    GET /config              - public links for the dashboard (Grafana URL)
 """
-
-import os
 
 from fastapi import FastAPI, Query, Request
 from fastapi.staticfiles import StaticFiles
 
 from db_writer import DBWriter
 from ml_model import FilterPredictor
-
-# localhost:3000 with docker compose, /grafana/ behind CloudFront on AWS
-GRAFANA_URL = os.getenv("GRAFANA_URL", "http://localhost:3000").rstrip("/")
 
 db_writer = DBWriter()
 predictor = FilterPredictor()
@@ -66,12 +60,6 @@ def predict(hours: int = Query(24, ge=1, le=24 * 30)):
 @app.get("/alerts")
 def get_alerts(hours: int = Query(24, ge=1, le=24 * 30)):
     return {"events": db_writer.get_alert_events(hours=hours)}
-
-
-@app.get("/config")
-def config():
-    # The dashboard asks for the Grafana address, which differs per environment
-    return {"grafana_url": GRAFANA_URL}
 
 
 # Static dashboard - served on the same origin as the API, so the frontend needs
