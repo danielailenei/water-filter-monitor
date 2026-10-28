@@ -2,11 +2,12 @@
 FROM grafana/grafana:13.1.3
 
 # Patch de securitate: scanarea ECR a gasit CVE-uri CRITICAL/HIGH in curl 8.21.0
-# si openssl 3.5.7 din baza Alpine. Alpine are deja versiunile corectate
-# (curl 8.22.0, openssl 3.5.8). Actualizam DOAR aceste pachete (schimbare minima),
+# si openssl 3.5.7 din baza Alpine, apoi CVE-2026-111497 (CRITICAL) in brotli 1.2.0.
+# Alpine are deja versiunile corectate (curl 8.22.0, openssl 3.5.8, brotli 1.2.1).
+# Actualizam DOAR aceste pachete (schimbare minima),
 # ca root, apoi revenim la utilizatorul neprivilegiat al imaginii (472 = grafana).
 USER root
-RUN apk upgrade --no-cache curl libcurl libssl3 libcrypto3
+RUN apk upgrade --no-cache curl libcurl libssl3 libcrypto3 brotli-libs
 USER 472
 
 # Ora Romaniei si format romanesc de data (ca dashboard-ul aplicatiei si email-urile),
