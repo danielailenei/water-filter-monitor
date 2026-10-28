@@ -27,14 +27,14 @@ LEVELS = {
         "color": "#ea580c", "tint": "#ffedd5",
         "headline": "Filtrul a ajuns la 90%",
         "subject": "Filtru la 90% – pregătește un filtru nou",
-        "advice": "Filtrul este aproape înfundat. Pregătește un filtru de schimb.",
+        "advice": "Filtrul este aproape colmatat. Pregătește un filtru de schimb.",
         "priority": 4, "tag": "orange_circle",
     },
     100: {
         "color": "#dc2626", "tint": "#fee2e2",
-        "headline": "Filtrul este înfundat",
-        "subject": "Filtru ÎNFUNDAT – înlocuiește-l",
-        "advice": "Presiunea a depășit pragul de înfundare. Înlocuiește filtrul cât mai curând.",
+        "headline": "Filtrul este colmatat",
+        "subject": "Filtru COLMATAT – înlocuiește-l",
+        "advice": "Presiunea a depășit pragul de colmatare. Înlocuiește filtrul cât mai curând.",
         "priority": 5, "tag": "rotating_light",
     },
 }
@@ -69,11 +69,11 @@ def build_alert(threshold: int, pressure: float, clog_threshold: float,
         rows.append(("Turbiditate", f"{float(reading['turbidity_ntu']):.2f} NTU"))
     days = reading.get("days_remaining_model")
     if threshold < 100 and days is not None and float(days) > 0:
-        rows.append(("Estimare înfundare", f"în ~{_duration(float(days) * 86400)}"))
+        rows.append(("Estimare colmatare", f"în ~{_duration(float(days) * 86400)}"))
 
     # ---- plain text (fallback for clients without HTML) ----
     text = "\n".join(
-        [lv["headline"] + f" ({pct:.0f}% înfundare)", "", lv["advice"], ""]
+        [lv["headline"] + f" ({pct:.0f}% colmatare)", "", lv["advice"], ""]
         + [f"{k}: {v}" for k, v in rows]
         + ["", f"Dashboard: {app_url}", "", f"Water Filter Monitor · {now}"]
     )
@@ -106,7 +106,7 @@ def build_alert(threshold: int, pressure: float, clog_threshold: float,
       </tr></table>
       <p style="margin:6px 0 18px;font-size:13px;color:#6b7280">
         <span style="display:inline-block;padding:2px 8px;border-radius:999px;background:{lv['tint']};
-              color:{lv['color']};font-weight:700">{pct:.0f}%</span>&nbsp; înfundare (pragul: presiune de {clog_threshold:.2f} bar)
+              color:{lv['color']};font-weight:700">{pct:.0f}%</span>&nbsp; colmatare (pragul: presiune de {clog_threshold:.2f} bar)
       </p>
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0">{rows_html}</table>
     </td></tr>
@@ -122,7 +122,7 @@ def build_alert(threshold: int, pressure: float, clog_threshold: float,
 </body></html>"""
 
     # ---- ntfy push: short, like a real notification (markdown for the bold values) ----
-    push_lines = [f"**{pct:.0f}%** înfundare · presiune **{pressure:.2f} bar**"]
+    push_lines = [f"**{pct:.0f}%** colmatare · presiune **{pressure:.2f} bar**"]
     details = [f"{k} {v}" for k, v in rows[1:3] if k in ("Debit", "Turbiditate")]
     if details:
         push_lines.append(" · ".join(details))
