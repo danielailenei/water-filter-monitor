@@ -6,4 +6,8 @@
 # exact aceeasi imagine pentru totdeauna -> build reproductibil.
 FROM eclipse-mosquitto:2@sha256:38c0da4f2ef84284d47b3b3eeea1cb3bdeabe81ee10caf0cd5c5ff61ee3ea408
 
+# Patch de securitate: scanarea ECR a gasit CVE-2026-111497 (CRITICAL) in brotli 1.2.0
+# din baza Alpine. Alpine are deja versiunea corectata (1.2.1); actualizam DOAR acest pachet.
+RUN apk upgrade --no-cache brotli-libs
+
 COPY config/mosquitto.conf /mosquitto/config/mosquitto.conf
