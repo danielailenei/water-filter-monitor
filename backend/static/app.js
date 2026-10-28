@@ -104,7 +104,7 @@ function refreshStatus() {
 
 /* Filter condition from the clogging percentage (pressure / threshold). */
 function level(pct) {
-  if (pct >= 100) return { level: "danger", text: "înfundat — necesită înlocuire" };
+  if (pct >= 100) return { level: "danger", text: "colmatat — necesită înlocuire" };
   if (pct >= 90) return { level: "danger", text: "critic" };
   if (pct >= 80) return { level: "warn", text: "atenție — pregătește un filtru nou" };
   return { level: "ok", text: "în stare bună" };
@@ -131,7 +131,7 @@ function renderLatest() {
   // keeps rising afterwards (up to the mains ceiling), but the filter is simply
   // clogged. How far past the threshold shows in "Presiune / prag" below.
   $("clog-pct").textContent = Math.min(Math.round(pct), 100);
-  $("clog-unit").textContent = pct >= 100 ? "% · prag depășit" : "% înfundare";
+  $("clog-unit").textContent = pct >= 100 ? "% · prag depășit" : "% colmatare";
   $("state-chip").textContent = lv.text;
   $("state-chip").dataset.level = lv.level;
   $("pressure-vs-threshold").textContent = `${fmt(p, 3)} / ${fmt(state.threshold, 1)} bar`;
@@ -186,7 +186,7 @@ function renderPredict() {
   }
 
   if (d.status === "clogged") {
-    main.textContent = "înfundat";
+    main.textContent = "colmatat";
     sub.textContent = `pragul a fost atins acum ${fmtDuration(d.seconds_since_clogged + since)}`;
     box.dataset.level = "danger";
   } else if (d.status === "ok") {
@@ -332,7 +332,7 @@ function drawChart() {
     mk("line", { class: "threshold", x1: pad.l, x2: W - pad.r, y1: ty, y2: ty });
     // label on the left: the curve starts low there, so it never covers the text
     mk("text", { class: "threshold-label", x: pad.l + 6, y: ty - 5, "text-anchor": "start" },
-       `prag înfundare ${fmt(state.threshold, 1)} bar`);
+       `prag colmatare ${fmt(state.threshold, 1)} bar`);
   }
 
   const cursor = mk("line", { class: "cursor", y1: pad.t, y2: H - pad.b, visibility: "hidden" });
@@ -385,9 +385,9 @@ function onChartLeave() {
 /* ---------------- alerts ---------------- */
 
 const ALERT_TEXT = {
-  80: ["⚠️", "80% din pragul de înfundare — email + push trimise"],
-  90: ["🟠", "90% din pragul de înfundare — email + push trimise"],
-  100: ["🔴", "filtru înfundat — email + push trimise"],
+  80: ["⚠️", "80% din pragul de colmatare — email + push trimise"],
+  90: ["🟠", "90% din pragul de colmatare — email + push trimise"],
+  100: ["🔴", "filtru colmatat — email + push trimise"],
 };
 
 function renderAlerts(events) {
