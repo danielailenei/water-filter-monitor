@@ -29,7 +29,7 @@ resource "aws_ecs_service" "app" {
 
   # Servicii care trebuie sa ruleze EXACT o instanta -> la deploy opreste vechiul, apoi porneste noul:
   #  - influxdb: doua taskuri pe acelasi EFS ar corupe baza de date
-  #  - sensor: doi senzori (filtru vechi infundat + filtru nou) publica alternativ
+  #  - sensor: doi senzori (filtru vechi colmatat + filtru nou) publica alternativ
   #    presiuni mari/mici -> alertele se reseteaza si se retrimit la fiecare citire
   #  - worker: doi workeri ar scrie de doua ori fiecare citire si ar trimite alertele dublu
   deployment_minimum_healthy_percent = contains(local.singletons, each.key) ? 0 : 100

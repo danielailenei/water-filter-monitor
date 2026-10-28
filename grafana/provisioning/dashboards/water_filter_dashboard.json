@@ -25,8 +25,8 @@
   "panels": [
     {
       "id": 5,
-      "title": "Grad de înfundare",
-      "description": "Presiunea față de pragul de înfundare (1,5 bar), limitat la 100%.",
+      "title": "Grad de colmatare",
+      "description": "Presiunea față de pragul de colmatare (1,5 bar), limitat la 100%.",
       "type": "gauge",
       "gridPos": {
         "h": 7,
@@ -59,7 +59,7 @@
           "min": 0,
           "max": 100,
           "decimals": 0,
-          "displayName": "înfundare",
+          "displayName": "colmatare",
           "thresholds": {
             "mode": "absolute",
             "steps": [
@@ -122,7 +122,7 @@
                   "color": "green"
                 },
                 "1": {
-                  "text": "ÎNFUNDAT",
+                  "text": "COLMATAT",
                   "color": "red"
                 }
               }
@@ -304,7 +304,7 @@
     {
       "id": 1,
       "title": "Presiune diferențială (bar)",
-      "description": "Linia roșie punctată: pragul de înfundare. Presiunea se apropie de presiunea rețelei (4 bar) când filtrul se blochează.",
+      "description": "Linia roșie punctată: pragul de colmatare. Presiunea se apropie de presiunea rețelei (4 bar) când filtrul se blochează.",
       "type": "timeseries",
       "gridPos": {
         "h": 9,
